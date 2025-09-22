@@ -13,7 +13,7 @@
             left: 50%;
             transform: translateX(-50%);
             z-index: 9999;
-            background: rgba(255,255,255,0.9);
+            background: rgba(255,255,255,0.95);
             padding: 8px 12px;
             border-radius: 10px;
             display: flex;
@@ -51,13 +51,18 @@
             [42.0, 28.5]
         ];
 
+        // --- Map setup ---
         let map = L.map('map', {
             maxBounds: greeceBounds,
             maxBoundsViscosity: 1.0
         }).setView([37.9838, 23.7275], 7);
 
-        map.setMinZoom(7);
-        map.setMaxZoom(10);
+        // Enable zoom in/out
+        map.scrollWheelZoom.enable();
+        map.touchZoom.enable();
+        map.doubleClickZoom.enable();
+        map.boxZoom.enable();
+        map.keyboard.enable();
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors'
@@ -83,6 +88,7 @@
                     filters: [{ name: 'LoRaGPS' }],
                     optionalServices: [SERVICE_UUID]
                 });
+
                 const server = await bleDevice.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
                 gpsCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
@@ -93,7 +99,7 @@
                 alert("Connected to ESP32 BLE!");
             } catch (err) {
                 console.error(err);
-                alert("BLE connection failed!");
+                alert("BLE connection failed! Make sure ESP32 is advertising and not already connected.");
             }
         });
 
@@ -116,9 +122,8 @@
 
         // --- Handle incoming GPS data ---
         function handleGPSData(event) {
-            const value = event.target.value;
             const decoder = new TextDecoder();
-            const text = decoder.decode(value);
+            const text = decoder.decode(event.target.value);
             text.split("\n").forEach(line => {
                 if (line.includes(",")) {
                     const [latStr, lngStr] = line.split(",");
@@ -128,10 +133,16 @@
                         const pos = [lat, lng];
                         if (!marker) marker = L.marker(pos).addTo(map).bindPopup("ESP32 GPS").openPopup();
                         else marker.setLatLng(pos);
+
                         trail.push(pos);
                         if (polyline) polyline.setLatLngs(trail);
                         else polyline = L.polyline(trail, { color: 'blue' }).addTo(map);
-                        if (followMode) map.setView(pos, 10);
+
+                        if (followMode) {
+                            // Keep current zoom unless first marker
+                            if (map.getZoom() < 7) map.setView(pos, 10);
+                            else map.panTo(pos, { animate: true });
+                        }
                     }
                 }
             });
