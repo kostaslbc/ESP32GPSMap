@@ -49,7 +49,21 @@
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-        let map = L.map('map').setView([37.9838, 23.7275], 6);
+        // --- Greece bounds ---
+        const greeceBounds = [
+            [34.8, 19.0],   // SW corner
+            [42.0, 28.5]    // NE corner
+        ];
+
+        let map = L.map('map', {
+            maxBounds: greeceBounds,
+            maxBoundsViscosity: 1.0 // prevents dragging outside bounds
+        }).setView([37.9838, 23.7275], 7); // start near Athens
+
+        // Optional: limit zoom
+        map.setMinZoom(7);
+        map.setMaxZoom(10);
+
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
@@ -83,7 +97,7 @@
                     });
                 });
 
-                if (ifaceNumber===null || endpointIn===null) throw new Error("No CDC interface found!");
+                if(ifaceNumber===null || endpointIn===null) throw new Error("No CDC interface found!");
 
                 await device.claimInterface(ifaceNumber);
                 await device.controlTransferOut({
