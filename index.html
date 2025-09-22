@@ -131,7 +131,7 @@
                     const lng = parseFloat(lngStr.trim());
                     if (!isNaN(lat) && !isNaN(lng)) {
                         const pos = [lat, lng];
-                        if (!marker) marker = L.marker(pos).addTo(map).bindPopup("ESP32 GPS").openPopup();
+                        if (!marker) marker = L.marker(pos).addTo(map).bindPopup("ANTONIS PIN").openPopup();
                         else marker.setLatLng(pos);
 
                         trail.push(pos);
@@ -150,3 +150,4 @@
     </script>
 </body>
 </html>
+
