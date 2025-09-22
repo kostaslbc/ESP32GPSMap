@@ -25,21 +25,54 @@
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-        let map = L.map('map').setView([0, 0], 2);
+        let map = L.map('map').setView([37.98, 23.72], 6); // Start centered on Greece
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
         let marker;
-        let port;
+        let device;
+        let ifaceNumber = null;
+        let endpointIn = null;
 
         document.getElementById('connectBtn').addEventListener('click', async () => {
             try {
-                port = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x303A }] });
-                await port.open();
-                await port.selectConfiguration(1);
-                await port.claimInterface(2);
-                await port.controlTransferOut({ requestType: 'class', recipient: 'interface', request: 0x22, value: 0x01, index: 2 });
+                // Ask user to select ESP32 (Vendor ID = 0x303A)
+                device = await navigator.usb.requestDevice({
+                    filters: [{ vendorId: 0x303A }]
+                });
+
+                await device.open();
+                await device.selectConfiguration(1);
+
+                // Find CDC Data interface + IN endpoint automatically
+                const config = device.configuration;
+                config.interfaces.forEach(iface => {
+                    iface.alternates.forEach(alt => {
+                        if (alt.interfaceClass === 0x0A) { // CDC Data
+                            ifaceNumber = iface.interfaceNumber;
+                            alt.endpoints.forEach(ep => {
+                                if (ep.direction === "in") {
+                                    endpointIn = ep.endpointNumber;
+                                }
+                            });
+                        }
+                    });
+                });
+
+                if (ifaceNumber === null || endpointIn === null) {
+                    throw new Error("No CDC data interface found!");
+                }
+
+                await device.claimInterface(ifaceNumber);
+                // Set line coding (baud etc) – class-specific request
+                await device.controlTransferOut({
+                    requestType: 'class',
+                    recipient: 'interface',
+                    request: 0x22, // SET_CONTROL_LINE_STATE
+                    value: 0x01,   // activate carrier
+                    index: ifaceNumber
+                });
 
                 readLoop();
                 alert("ESP32 Connected!");
@@ -51,9 +84,9 @@
 
         async function readLoop() {
             const decoder = new TextDecoder();
-            while (port.opened) {
+            while (device.opened) {
                 try {
-                    const result = await port.transferIn(5, 64);
+                    const result = await device.transferIn(endpointIn, 64);
                     if (result.data && result.data.byteLength > 0) {
                         const text = decoder.decode(result.data);
                         text.split("\n").forEach(line => {
@@ -68,12 +101,14 @@
                                     } else {
                                         marker.setLatLng(pos);
                                     }
-                                    map.setView(pos, 15);
+                                    map.setView(pos, 10);
                                 }
                             }
                         });
                     }
-                } catch (err) { console.error(err); }
+                } catch (err) {
+                    console.error("Read error:", err);
+                }
             }
         }
     </script>
