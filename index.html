@@ -7,9 +7,12 @@
     <style>
         html, body { margin: 0; padding: 0; height: 100%; width: 100%; }
         #map { height: 100%; width: 100%; }
-        #connectBtn {
+        #buttons {
             position: absolute;
             top: 10px; left: 10px; z-index: 10;
+        }
+        button {
+            margin: 5px;
             padding: 10px 20px;
             font-size: 16px;
             background-color: #28a745;
@@ -17,27 +20,38 @@
             border: none;
             border-radius: 5px;
         }
+        #disconnectBtn { background-color: #dc3545; }
+        #clearBtn { background-color: #ffc107; color: black; }
+        #followBtn { background-color: #007bff; }
     </style>
 </head>
 <body>
-    <button id="connectBtn">Connect ESP32</button>
+    <div id="buttons">
+        <button id="connectBtn">Connect ESP32</button>
+        <button id="disconnectBtn">Disconnect</button>
+        <button id="clearBtn">Clear Trail</button>
+        <button id="followBtn">Follow: ON</button>
+    </div>
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-        let map = L.map('map').setView([37.98, 23.72], 6); // Start centered on Greece
+        let map = L.map('map').setView([37.98, 23.72], 6);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
         let marker;
+        let trail = [];
+        let polyline;
         let device;
         let ifaceNumber = null;
         let endpointIn = null;
+        let reading = false;
+        let followMode = true;
 
         document.getElementById('connectBtn').addEventListener('click', async () => {
             try {
-                // Ask user to select ESP32 (Vendor ID = 0x303A)
                 device = await navigator.usb.requestDevice({
                     filters: [{ vendorId: 0x303A }]
                 });
@@ -65,15 +79,15 @@
                 }
 
                 await device.claimInterface(ifaceNumber);
-                // Set line coding (baud etc) – class-specific request
                 await device.controlTransferOut({
                     requestType: 'class',
                     recipient: 'interface',
-                    request: 0x22, // SET_CONTROL_LINE_STATE
-                    value: 0x01,   // activate carrier
+                    request: 0x22,
+                    value: 0x01,
                     index: ifaceNumber
                 });
 
+                reading = true;
                 readLoop();
                 alert("ESP32 Connected!");
             } catch (err) {
@@ -82,9 +96,35 @@
             }
         });
 
+        document.getElementById('disconnectBtn').addEventListener('click', async () => {
+            try {
+                reading = false;
+                if (device && device.opened) {
+                    await device.close();
+                }
+                alert("ESP32 Disconnected!");
+            } catch (err) {
+                console.error(err);
+            }
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            trail = [];
+            if (polyline) {
+                map.removeLayer(polyline);
+                polyline = null;
+            }
+            alert("Trail cleared!");
+        });
+
+        document.getElementById('followBtn').addEventListener('click', () => {
+            followMode = !followMode;
+            document.getElementById('followBtn').innerText = "Follow: " + (followMode ? "ON" : "OFF");
+        });
+
         async function readLoop() {
             const decoder = new TextDecoder();
-            while (device.opened) {
+            while (device.opened && reading) {
                 try {
                     const result = await device.transferIn(endpointIn, 64);
                     if (result.data && result.data.byteLength > 0) {
@@ -96,18 +136,33 @@
                                 const lng = parseFloat(lngStr.trim());
                                 if (!isNaN(lat) && !isNaN(lng)) {
                                     const pos = [lat, lng];
+
+                                    // Update marker
                                     if (!marker) {
                                         marker = L.marker(pos).addTo(map).bindPopup("ESP32 GPS").openPopup();
                                     } else {
                                         marker.setLatLng(pos);
                                     }
-                                    map.setView(pos, 10);
+
+                                    // Add to trail
+                                    trail.push(pos);
+                                    if (polyline) {
+                                        polyline.setLatLngs(trail);
+                                    } else {
+                                        polyline = L.polyline(trail, { color: 'blue' }).addTo(map);
+                                    }
+
+                                    // Center map only if follow mode is ON
+                                    if (followMode) {
+                                        map.setView(pos, 10);
+                                    }
                                 }
                             }
                         });
                     }
                 } catch (err) {
                     console.error("Read error:", err);
+                    break;
                 }
             }
         }
