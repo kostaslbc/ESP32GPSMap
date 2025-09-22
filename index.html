@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ESP32 GPS Map V3</title>
+    <title>ESP32 GPS Map</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
         html, body { margin:0; padding:0; height:100%; width:100%; }
         #map { height:100%; width:100%; z-index:1; }
+
+        /* Fixed horizontal toolbar at top */
         #toolbar {
             position: fixed;
             top: 10px;
@@ -20,6 +22,7 @@
             gap: 10px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.2);
         }
+
         button {
             padding: 10px 18px;
             font-size: 15px;
@@ -46,7 +49,9 @@
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
         let map = L.map('map').setView([37.98, 23.72], 6);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
 
         let marker;
         let trail = [];
@@ -63,7 +68,7 @@
                 await device.open();
                 await device.selectConfiguration(1);
 
-                // Find CDC Data interface + IN endpoint automatically
+                // Detect CDC interface + IN endpoint dynamically
                 const config = device.configuration;
                 config.interfaces.forEach(iface => {
                     iface.alternates.forEach(alt => {
@@ -76,21 +81,21 @@
                     });
                 });
 
-                if (ifaceNumber===null || endpointIn===null) throw new Error("No CDC interface found!");
+                if(ifaceNumber===null || endpointIn===null) throw new Error("No CDC interface found!");
 
                 await device.claimInterface(ifaceNumber);
                 await device.controlTransferOut({
-                    requestType: 'class',
-                    recipient: 'interface',
-                    request: 0x22,
-                    value: 0x01,
-                    index: ifaceNumber
+                    requestType:'class',
+                    recipient:'interface',
+                    request:0x22,
+                    value:0x01,
+                    index:ifaceNumber
                 });
 
                 reading = true;
                 readLoop();
                 alert("ESP32 Connected!");
-            } catch (err) {
+            } catch(err) {
                 console.error(err);
                 alert("Failed to connect ESP32!");
             }
@@ -98,45 +103,45 @@
 
         document.getElementById('disconnectBtn').addEventListener('click', async () => {
             reading = false;
-            if (device && device.opened) await device.close();
+            if(device && device.opened) await device.close();
             alert("ESP32 Disconnected!");
         });
 
         document.getElementById('clearBtn').addEventListener('click', () => {
             trail = [];
-            if (polyline) { map.removeLayer(polyline); polyline=null; }
+            if(polyline){ map.removeLayer(polyline); polyline=null; }
         });
 
         document.getElementById('followBtn').addEventListener('click', () => {
             followMode = !followMode;
-            document.getElementById('followBtn').innerText = "Follow: " + (followMode ? "ON" : "OFF");
+            document.getElementById('followBtn').innerText = "Follow: "+(followMode?"ON":"OFF");
         });
 
         async function readLoop() {
             const decoder = new TextDecoder();
-            while (device.opened && reading) {
-                try {
+            while(device && device.opened && reading){
+                try{
                     const result = await device.transferIn(endpointIn, 64);
-                    if (result.data && result.data.byteLength>0) {
+                    if(result.data && result.data.byteLength>0){
                         const text = decoder.decode(result.data);
                         text.split("\n").forEach(line=>{
                             if(line.includes(",")){
                                 const [latStr,lngStr]=line.split(",");
                                 const lat=parseFloat(latStr.trim());
                                 const lng=parseFloat(lngStr.trim());
-                                if(!isNaN(lat) && !isNaN(lng)){
+                                if(!isNaN(lat)&&!isNaN(lng)){
                                     const pos=[lat,lng];
                                     if(!marker) marker=L.marker(pos).addTo(map).bindPopup("ESP32 GPS").openPopup();
                                     else marker.setLatLng(pos);
                                     trail.push(pos);
                                     if(polyline) polyline.setLatLngs(trail);
                                     else polyline=L.polyline(trail,{color:'blue'}).addTo(map);
-                                    if(followMode) map.setView(pos, 10);
+                                    if(followMode) map.setView(pos,10);
                                 }
                             }
                         });
                     }
-                } catch(err){ console.error("Read error:",err); break; }
+                }catch(err){ console.error("Read error:",err); break; }
             }
         }
     </script>
