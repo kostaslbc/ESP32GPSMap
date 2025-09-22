@@ -68,96 +68,80 @@
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
+        // --- GPS vars ---
         let marker;
         let trail = [];
         let polyline;
-        let device;
-        let ifaceNumber = null;
-        let endpointIn = null;
-        let reading = false;
         let followMode = true;
 
-        // --- WebUSB connect ---
+        // --- Serial vars ---
+        let port;
+        let reader;
+        let inputDone;
+
+        // --- Buttons ---
         document.getElementById('connectBtn').addEventListener('click', async () => {
             try {
-                device = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x303A }] });
-                await device.open();
-                await device.selectConfiguration(1);
+                // Ask user to select CP210x serial port
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 }); // match your ESP GPS baud
 
-                // Detect CDC interface + IN endpoint
-                const config = device.configuration;
-                config.interfaces.forEach(iface => {
-                    iface.alternates.forEach(alt => {
-                        if (alt.interfaceClass === 0x0A) {
-                            ifaceNumber = iface.interfaceNumber;
-                            alt.endpoints.forEach(ep => {
-                                if (ep.direction === "in") endpointIn = ep.endpointNumber;
-                            });
-                        }
-                    });
-                });
+                const decoder = new TextDecoderStream();
+                inputDone = port.readable.pipeTo(decoder.writable);
+                reader = decoder.readable.getReader();
 
-                if(ifaceNumber===null || endpointIn===null) throw new Error("No CDC interface found!");
-
-                await device.claimInterface(ifaceNumber);
-                await device.controlTransferOut({
-                    requestType:'class',
-                    recipient:'interface',
-                    request:0x22,
-                    value:0x01,
-                    index:ifaceNumber
-                });
-
-                reading = true;
                 readLoop();
-                alert("ESP32 Connected!");
-            } catch(err) {
+                alert("Connected via Web Serial!");
+            } catch (err) {
                 console.error(err);
-                alert("Failed to connect ESP32!");
+                alert("Failed to connect!");
             }
         });
 
         document.getElementById('disconnectBtn').addEventListener('click', async () => {
-            reading = false;
-            if(device && device.opened) await device.close();
-            alert("ESP32 Disconnected!");
+            if (reader) {
+                await reader.cancel();
+                reader.releaseLock();
+            }
+            if (port) {
+                await port.close();
+            }
+            alert("Disconnected!");
         });
 
         document.getElementById('clearBtn').addEventListener('click', () => {
             trail = [];
-            if(polyline){ map.removeLayer(polyline); polyline=null; }
+            if (polyline) { map.removeLayer(polyline); polyline = null; }
         });
 
         document.getElementById('followBtn').addEventListener('click', () => {
             followMode = !followMode;
-            document.getElementById('followBtn').innerText = "Follow: "+(followMode?"ON":"OFF");
+            document.getElementById('followBtn').innerText = "Follow: " + (followMode ? "ON" : "OFF");
         });
 
+        // --- Read GPS data ---
         async function readLoop() {
-            const decoder = new TextDecoder();
-            while(device && device.opened && reading){
-                try{
-                    const result = await device.transferIn(endpointIn, 64);
-                    if(result.data && result.data.byteLength>0){
-                        const text = decoder.decode(result.data);
-                        text.split("\n").forEach(line=>{
-                            if(line.includes(",")){
-                                const [latStr,lngStr]=line.split(",");
-                                const lat=parseFloat(latStr.trim());
-                                const lng=parseFloat(lngStr.trim());
-                                if(!isNaN(lat)&&!isNaN(lng)){
-                                    const pos=[lat,lng];
-                                    if(!marker) marker=L.marker(pos).addTo(map).bindPopup("ESP32 GPS").openPopup();
-                                    else marker.setLatLng(pos);
-                                    trail.push(pos);
-                                    if(polyline) polyline.setLatLngs(trail);
-                                    else polyline=L.polyline(trail,{color:'blue'}).addTo(map);
-                                    if(followMode) map.setView(pos,10);
-                                }
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                if (value) {
+                    value.split("\n").forEach(line => {
+                        if (line.includes(",")) {
+                            const [latStr, lngStr] = line.split(",");
+                            const lat = parseFloat(latStr.trim());
+                            const lng = parseFloat(lngStr.trim());
+                            if (!isNaN(lat) && !isNaN(lng)) {
+                                const pos = [lat, lng];
+                                if (!marker) marker = L.marker(pos).addTo(map).bindPopup("ESP32 GPS").openPopup();
+                                else marker.setLatLng(pos);
+                                trail.push(pos);
+                                if (polyline) polyline.setLatLngs(trail);
+                                else polyline = L.polyline(trail, { color: 'blue' }).addTo(map);
+                                if (followMode) map.setView(pos, 10);
                             }
-                        });
-                    }
-                }catch(err){ console.error("Read error:",err); break; }
+                        }
+                    });
+                }
             }
         }
     </script>
