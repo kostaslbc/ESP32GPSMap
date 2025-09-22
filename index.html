@@ -1,29 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ESP32 GPS Mapv3</title>
+    <title>ESP32 GPS Map V3</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            width: 100%;
-        }
-        #map {
-            height: 100%;
-            width: 100%;
-            z-index: 1;
-        }
-        /* Toolbar at the top */
+        html, body { margin:0; padding:0; height:100%; width:100%; }
+        #map { height:100%; width:100%; z-index:1; }
         #toolbar {
             position: fixed;
             top: 10px;
             left: 50%;
             transform: translateX(-50%);
             z-index: 9999;
-            background: rgba(255, 255, 255, 0.9);
+            background: rgba(255,255,255,0.9);
             padding: 8px 12px;
             border-radius: 10px;
             display: flex;
@@ -38,41 +28,66 @@
             cursor: pointer;
             font-weight: bold;
         }
-        #connectBtn { background-color: #28a745; color: white; }
-        #disconnectBtn { background-color: #dc3545; color: white; }
-        #clearBtn { background-color: #ffc107; color: black; }
-        #followBtn { background-color: #007bff; color: white; }
+        #connectBtn { background-color:#28a745; color:white; }
+        #disconnectBtn { background-color:#dc3545; color:white; }
+        #clearBtn { background-color:#ffc107; color:black; }
+        #followBtn { background-color:#007bff; color:white; }
     </style>
 </head>
 <body>
-    <!-- Toolbar with buttons -->
     <div id="toolbar">
         <button id="connectBtn">Connect</button>
         <button id="disconnectBtn">Disconnect</button>
         <button id="clearBtn">Clear Trail</button>
         <button id="followBtn">Follow: ON</button>
     </div>
-
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-        let map = L.map('map').setView([37.9838, 23.7275], 6); // Athens as start
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(map);
+        let map = L.map('map').setView([37.98, 23.72], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
 
         let marker;
-        let trail = L.polyline([], { color: 'red' }).addTo(map);
-        let follow = true;
-        let reader, port;
+        let trail = [];
+        let polyline;
+        let device;
+        let ifaceNumber = null;
+        let endpointIn = null;
+        let reading = false;
+        let followMode = true;
 
-        // Connect to ESP32
         document.getElementById('connectBtn').addEventListener('click', async () => {
             try {
-                port = await navigator.serial.requestPort();
-                await port.open({ baudRate: 115200 });
-                reader = port.readable.getReader();
+                device = await navigator.usb.requestDevice({ filters: [{ vendorId: 0x303A }] });
+                await device.open();
+                await device.selectConfiguration(1);
+
+                // Find CDC Data interface + IN endpoint automatically
+                const config = device.configuration;
+                config.interfaces.forEach(iface => {
+                    iface.alternates.forEach(alt => {
+                        if (alt.interfaceClass === 0x0A) {
+                            ifaceNumber = iface.interfaceNumber;
+                            alt.endpoints.forEach(ep => {
+                                if (ep.direction === "in") endpointIn = ep.endpointNumber;
+                            });
+                        }
+                    });
+                });
+
+                if (ifaceNumber===null || endpointIn===null) throw new Error("No CDC interface found!");
+
+                await device.claimInterface(ifaceNumber);
+                await device.controlTransferOut({
+                    requestType: 'class',
+                    recipient: 'interface',
+                    request: 0x22,
+                    value: 0x01,
+                    index: ifaceNumber
+                });
+
+                reading = true;
                 readLoop();
                 alert("ESP32 Connected!");
             } catch (err) {
@@ -81,66 +96,47 @@
             }
         });
 
-        // Disconnect ESP32
         document.getElementById('disconnectBtn').addEventListener('click', async () => {
-            if (reader) {
-                await reader.cancel();
-                reader.releaseLock();
-                reader = null;
-            }
-            if (port) {
-                await port.close();
-                port = null;
-            }
+            reading = false;
+            if (device && device.opened) await device.close();
             alert("ESP32 Disconnected!");
         });
 
-        // Clear trail
         document.getElementById('clearBtn').addEventListener('click', () => {
-            trail.setLatLngs([]);
+            trail = [];
+            if (polyline) { map.removeLayer(polyline); polyline=null; }
         });
 
-        // Toggle follow mode
         document.getElementById('followBtn').addEventListener('click', () => {
-            follow = !follow;
-            document.getElementById('followBtn').textContent = "Follow: " + (follow ? "ON" : "OFF");
+            followMode = !followMode;
+            document.getElementById('followBtn').innerText = "Follow: " + (followMode ? "ON" : "OFF");
         });
 
-        // Read data from ESP32
         async function readLoop() {
             const decoder = new TextDecoder();
-            while (port && reader) {
+            while (device.opened && reading) {
                 try {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    if (value) {
-                        const text = decoder.decode(value);
-                        text.split("\n").forEach(line => {
-                            if (line.includes(",")) {
-                                const [latStr, lngStr] = line.split(",");
-                                const lat = parseFloat(latStr.trim());
-                                const lng = parseFloat(lngStr.trim());
-                                if (!isNaN(lat) && !isNaN(lng)) {
-                                    const pos = [lat, lng];
-                                    if (!marker) {
-                                        marker = L.marker(pos).addTo(map).bindPopup("ESP32 GPS").openPopup();
-                                    } else {
-                                        marker.setLatLng(pos);
-                                    }
-                                    // Add to trail
-                                    trail.addLatLng(pos);
-                                    // Follow mode
-                                    if (follow) {
-                                        map.setView(pos, 15);
-                                    }
+                    const result = await device.transferIn(endpointIn, 64);
+                    if (result.data && result.data.byteLength>0) {
+                        const text = decoder.decode(result.data);
+                        text.split("\n").forEach(line=>{
+                            if(line.includes(",")){
+                                const [latStr,lngStr]=line.split(",");
+                                const lat=parseFloat(latStr.trim());
+                                const lng=parseFloat(lngStr.trim());
+                                if(!isNaN(lat) && !isNaN(lng)){
+                                    const pos=[lat,lng];
+                                    if(!marker) marker=L.marker(pos).addTo(map).bindPopup("ESP32 GPS").openPopup();
+                                    else marker.setLatLng(pos);
+                                    trail.push(pos);
+                                    if(polyline) polyline.setLatLngs(trail);
+                                    else polyline=L.polyline(trail,{color:'blue'}).addTo(map);
+                                    if(followMode) map.setView(pos, 10);
                                 }
                             }
                         });
                     }
-                } catch (err) {
-                    console.error("Read error:", err);
-                    break;
-                }
+                } catch(err){ console.error("Read error:",err); break; }
             }
         }
     </script>
