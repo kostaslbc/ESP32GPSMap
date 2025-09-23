@@ -44,8 +44,7 @@
             z-index: 9999;
             font-size: 14px;
         }
-
-        /* --- Remove Leaflet attribution and logo --- */
+       
         .leaflet-control-attribution,
         .leaflet-control-scale,
         .leaflet-control-logo { display: none !important; }
@@ -107,12 +106,12 @@
                 await gpsCharacteristic.startNotifications();
                 gpsCharacteristic.addEventListener('characteristicvaluechanged', handleGPSData);
 
-                setStatus("Connected to ESP32 BLE!");
+                setStatus("Connected to GPS Tracker!");
                 alert("Connected!");
             } catch (err) {
                 console.error(err);
-                setStatus("BLE connection failed");
-                alert("BLE connection failed! Make sure ESP32 is advertising and not already connected.");
+                setStatus("Bluettoth connection failed. Please reboot tracker ");
+                alert("BLE connection failed! Please reboot tracker.");
             }
         });
 
@@ -163,3 +162,4 @@
     </script>
 </body>
 </html>
+
