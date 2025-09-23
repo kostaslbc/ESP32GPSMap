@@ -44,6 +44,11 @@
             z-index: 9999;
             font-size: 14px;
         }
+
+        /* --- Remove Leaflet attribution and logo --- */
+        .leaflet-control-attribution,
+        .leaflet-control-scale,
+        .leaflet-control-logo { display: none !important; }
     </style>
 </head>
 <body>
@@ -58,15 +63,14 @@
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-        // --- Greece bounds ---
         const EuropeBounds = [[34, 71],[65, -25]];
 
-        // --- Map setup ---
         let map = L.map('map', {
             maxBounds: EuropeBounds,
             maxBoundsViscosity: 1.0,
             tap: true,
-            tapTolerance: 15
+            tapTolerance: 15,
+            attributionControl: false
         }).setView([54, 15], 7);
 
         map.scrollWheelZoom.enable();
@@ -75,27 +79,21 @@
         map.boxZoom.enable();
         map.keyboard.enable();
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        // --- Map variables ---
         let marker;
         let trail = [];
         let polyline;
         const MAX_TRAIL = 500;
         let followMode = true;
 
-        // --- BLE variables ---
         let bleDevice;
         let gpsCharacteristic;
         const SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab";
         const CHARACTERISTIC_UUID = "abcd1234-5678-90ab-cdef-1234567890ab";
 
-        // --- Status update function ---
         function setStatus(text) { document.getElementById('status').innerText = text; }
 
-        // --- Buttons ---
         document.getElementById('connectBtn').addEventListener('click', async () => {
             try {
                 bleDevice = await navigator.bluetooth.requestDevice({
@@ -138,7 +136,6 @@
             document.getElementById('followBtn').innerText = "Follow: " + (followMode ? "ON" : "OFF");
         });
 
-        // --- Handle incoming GPS data ---
         function handleGPSData(event) {
             const decoder = new TextDecoder();
             const text = decoder.decode(event.target.value);
@@ -166,8 +163,3 @@
     </script>
 </body>
 </html>
-
-
-
-
-
