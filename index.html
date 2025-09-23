@@ -48,7 +48,7 @@
 </head>
 <body>
     <div id="buttons">
-        <button id="connectBtn">Connect ESP32 BLE</button>
+        <button id="connectBtn">Connect GPS Tracker</button>
         <button id="disconnectBtn">Disconnect</button>
         <button id="clearBtn">Clear Trail</button>
         <button id="followBtn">Follow: ON</button>
@@ -59,7 +59,7 @@
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
         // --- Greece bounds ---
-        const greeceBounds = [[34.8, 19.0],[42.0, 28.5]];
+        const greeceBounds = [[34, 71],[-25, 65]];
 
         // --- Map setup ---
         let map = L.map('map', {
@@ -166,3 +166,4 @@
     </script>
 </body>
 </html>
+
