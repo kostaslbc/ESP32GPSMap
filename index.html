@@ -59,15 +59,15 @@
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
         // --- Greece bounds ---
-        const greeceBounds = [[34, 71],[65, -25]];
+        const EuropeBounds = [[34, 71],[65, -25]];
 
         // --- Map setup ---
         let map = L.map('map', {
-            maxBounds: greeceBounds,
+            maxBounds: EuropeBounds,
             maxBoundsViscosity: 1.0,
             tap: true,
             tapTolerance: 15
-        }).setView([37.9838, 23.7275], 7);
+        }).setView([54.9838, 15.7275], 7);
 
         map.scrollWheelZoom.enable();
         map.touchZoom.enable();
@@ -166,5 +166,6 @@
     </script>
 </body>
 </html>
+
 
 
