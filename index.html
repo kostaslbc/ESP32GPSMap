@@ -39,11 +39,31 @@
         #status { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 5px; z-index: 9999; font-size: 14px; }
         .legend-item { cursor: pointer; margin-bottom: 4px; }
         .legend-color { display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:middle; }
+
+        /* NEW: login box */
+        #loginBox {
+            position: fixed;
+            top: 150px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #fff;
+            padding: 10px;
+            border-radius: 6px;
+            z-index: 9999;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            display: none;
+        }
+        #loginBox input {
+            display: block;
+            margin-bottom: 6px;
+            padding: 6px;
+            width: 200px;
+        }
     </style>
 </head>
 <body>
     <div id="buttons">
-        <button id="connectBtn">Connect ESP32</button>
+        <button id="connectBtn" disabled>Connect ESP32</button> <!-- disabled until login -->
         <button id="disconnectBtn">Disconnect All</button>
         <button id="spectatorBtn">Spectator Mode</button>
     </div>
@@ -51,44 +71,80 @@
     <div id="map"></div>
     <div id="status">Initializing...</div>
 
+    <!-- NEW: login UI -->
+    <div id="loginBox">
+        <input id="email" type="email" placeholder="Email">
+        <input id="password" type="password" placeholder="Password">
+        <button onclick="login()">Login</button>
+        <button onclick="logout()">Logout</button>
+    </div>
+
     <!-- Leaflet -->
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script> <!-- NEW -->
 
     <script>
     // ------------------- Firebase Setup -------------------
     const firebaseConfig = {
-       apiKey: "AIzaSyDAuSpFwWPN39RHpd1a_f9J4eO3ktaKGhY",
-  authDomain: "fir-esp-3ce92.firebaseapp.com",
-  databaseURL: "https://fir-esp-3ce92-default-rtdb.firebaseio.com",
-  projectId: "fir-esp-3ce92",
-  storageBucket: "fir-esp-3ce92.firebasestorage.app",
-  messagingSenderId: "458185267913",
-  appId: "1:458185267913:web:7d0759cb3caf9a67ca0b18"
-
+        apiKey: "AIzaSyDAuSpFwWPN39RHpd1a_f9J4eO3ktaKGhY",
+        authDomain: "fir-esp-3ce92.firebaseapp.com",
+        databaseURL: "https://fir-esp-3ce92-default-rtdb.firebaseio.com",
+        projectId: "fir-esp-3ce92",
+        storageBucket: "fir-esp-3ce92.firebasestorage.app",
+        messagingSenderId: "458185267913",
+        appId: "1:458185267913:web:7d0759cb3caf9a67ca0b18"
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
+    const auth = firebase.auth(); // NEW
 
-    function sendGPS(planeID, lat, lng) {
-        db.ref('planes/' + planeID).set({
-            lat: lat,
-            lng: lng,
-            timestamp: Date.now()
+    // ------------------- Auth Handling -------------------
+    function login() {
+        const email = document.getElementById("email").value;
+        const password = document.getElementById("password").value;
+        auth.signInWithEmailAndPassword(email, password)
+        .then(user => {
+            setStatus("Signed in as " + user.user.email);
+            document.getElementById("loginBox").style.display = "none";
+            document.getElementById("connectBtn").disabled = false;
+        })
+        .catch(err => {
+            alert("Login failed: " + err.message);
         });
     }
+
+    function logout() {
+        auth.signOut().then(() => {
+            setStatus("Logged out");
+            document.getElementById("loginBox").style.display = "block";
+            document.getElementById("connectBtn").disabled = true;
+        });
+    }
+
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            setStatus("Signed in as " + user.email);
+            document.getElementById("loginBox").style.display = "none";
+            document.getElementById("connectBtn").disabled = false;
+        } else {
+            setStatus("Not signed in");
+            document.getElementById("loginBox").style.display = "block";
+            document.getElementById("connectBtn").disabled = true;
+        }
+    });
 
     // ------------------- Leaflet Map -------------------
     const map = L.map('map').setView([40.5, 23.0], 8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     const MAX_TRAIL = 500;
-    const planes = {};  // planeID -> {marker, trail, polyline, follow}
-    const devices = []; // BLE devices
+    const planes = {};
+    const devices = [];
     let spectatorMode = false;
-    let currentFollow = null;  // currently followed planeID
+    let currentFollow = null;
 
     function setStatus(text) { document.getElementById('status').innerText = text; }
     function getPlaneColor(id) {
@@ -142,7 +198,6 @@
                 if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
                 plane.polyline.setLatLngs(plane.trail);
 
-                // Auto-follow if selected
                 if (currentFollow == planeID) {
                     map.panTo(pos, { animate: true });
                 }
@@ -163,7 +218,10 @@
 
     async function connectESP32() {
         if (!BLE_SUPPORTED || spectatorMode) return;
-
+        if (!auth.currentUser) { // NEW: safety check
+            alert("Please log in first!");
+            return;
+        }
         try {
             const device = await navigator.bluetooth.requestDevice({
                 filters: [{ namePrefix: 'LoRaGPS' }],
@@ -193,7 +251,6 @@
         const lat = dataView.getFloat32(0, true);
         const lng = dataView.getFloat32(4, true);
         const planeID = dataView.getUint8(8);
-
         const pos = [lat, lng];
 
         if (!planes[planeID]) {
@@ -212,8 +269,14 @@
         if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
         plane.polyline.setLatLngs(plane.trail);
 
-        // Push to Firebase
-        sendGPS(planeID, lat, lng);
+        // Push to Firebase (only if logged in)
+        if (auth.currentUser) {
+            db.ref('planes/' + planeID).set({
+                lat: lat,
+                lng: lng,
+                timestamp: Date.now()
+            });
+        }
     }
 
     async function disconnectAll() {
