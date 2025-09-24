@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ESP32 GPS Map BLE</title>
+    <title>FPV Tracker Map BLE</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
@@ -44,7 +44,6 @@
             z-index: 9999;
             font-size: 14px;
         }
-       
         .leaflet-control-attribution,
         .leaflet-control-scale,
         .leaflet-control-logo { display: none !important; }
@@ -54,7 +53,7 @@
     <div id="buttons">
         <button id="connectBtn">Connect GPS Tracker</button>
         <button id="disconnectBtn">Disconnect</button>
-        <button id="clearBtn">Clear Trail</button>
+        <button id="clearBtn">Clear Trails</button>
         <button id="followBtn">Follow: ON</button>
     </div>
     <div id="map"></div>
@@ -63,7 +62,10 @@
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
         const EuropeBounds = [[34, 71],[65, -25]];
+        const MAX_TRAIL = 500;
+        let followMode = true;
 
+        // ---------------- Map ----------------
         let map = L.map('map', {
             maxBounds: EuropeBounds,
             maxBoundsViscosity: 1.0,
@@ -71,27 +73,29 @@
             tapTolerance: 15,
             attributionControl: false
         }).setView([54, 15], 7);
-
-        map.scrollWheelZoom.enable();
-        map.touchZoom.enable();
-        map.doubleClickZoom.enable();
-        map.boxZoom.enable();
-        map.keyboard.enable();
-
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        let marker;
-        let trail = [];
-        let polyline;
-        const MAX_TRAIL = 500;
-        let followMode = true;
+        // ---------------- Plane markers & trails ----------------
+        let marker1, marker2;
+        let trail1 = [], trail2 = [];
+        let polyline1, polyline2;
 
+        const planeIcon1 = L.icon({
+            iconUrl: 'https://img.icons8.com/color/48/000000/airplane-take-off.png',
+            iconSize: [32,32],
+        });
+        const planeIcon2 = L.icon({
+            iconUrl: 'https://img.icons8.com/color/48/000000/airplane-landing.png',
+            iconSize: [32,32],
+        });
+
+        // ---------------- BLE ----------------
         let bleDevice;
         let gpsCharacteristic;
         const SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab";
         const CHARACTERISTIC_UUID = "abcd1234-5678-90ab-cdef-1234567890ab";
 
-        function setStatus(text) { document.getElementById('status').innerText = text; }
+        function setStatus(text){ document.getElementById('status').innerText = text; }
 
         document.getElementById('connectBtn').addEventListener('click', async () => {
             try {
@@ -110,24 +114,23 @@
                 alert("Connected!");
             } catch (err) {
                 console.error(err);
-                setStatus("Bluettoth connection failed. Please reboot tracker ");
-                alert("BLE connection failed! Please reboot tracker.");
+                setStatus("Bluetooth connection failed");
+                alert("BLE connection failed! Make sure tracker is on.");
             }
         });
 
         document.getElementById('disconnectBtn').addEventListener('click', async () => {
-            if (bleDevice && bleDevice.gatt.connected) {
-                await bleDevice.gatt.disconnect();
-                setStatus("Disconnected");
-            }
+            if (bleDevice && bleDevice.gatt.connected) await bleDevice.gatt.disconnect();
             bleDevice = null;
             gpsCharacteristic = null;
+            setStatus("Disconnected");
             alert("Disconnected!");
         });
 
         document.getElementById('clearBtn').addEventListener('click', () => {
-            trail = [];
-            if (polyline) { map.removeLayer(polyline); polyline = null; }
+            trail1 = []; trail2 = [];
+            if(polyline1) { map.removeLayer(polyline1); polyline1 = null; }
+            if(polyline2) { map.removeLayer(polyline2); polyline2 = null; }
         });
 
         document.getElementById('followBtn').addEventListener('click', () => {
@@ -135,26 +138,43 @@
             document.getElementById('followBtn').innerText = "Follow: " + (followMode ? "ON" : "OFF");
         });
 
-        function handleGPSData(event) {
+        // ---------------- Handle BLE GPS Data ----------------
+        function handleGPSData(event){
             const decoder = new TextDecoder();
             const text = decoder.decode(event.target.value);
+
             text.split("\n").forEach(line => {
-                if (line.includes(",")) {
-                    let [latStr, lngStr] = line.split(",");
-                    const lat = parseFloat(latStr.trim());
-                    const lng = parseFloat(lngStr.trim());
-                    if (!isNaN(lat) && !isNaN(lng)) {
-                        const pos = [lat, lng];
-                        if (!marker) marker = L.marker(pos).addTo(map).bindPopup(`Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`).openPopup();
-                        else marker.setLatLng(pos).bindPopup(`Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
+                const parts = line.split(",");
+                if(parts.length === 3){
+                    const planeID = parseInt(parts[0].trim());
+                    const lat = parseFloat(parts[1].trim());
+                    const lng = parseFloat(parts[2].trim());
+                    if(!isNaN(lat) && !isNaN(lng)){
+                        const pos = [lat,lng];
 
-                        trail.push(pos);
-                        if (trail.length > MAX_TRAIL) trail.shift();
+                        if(planeID === 1){
+                            if(!marker1) marker1 = L.marker(pos,{icon:planeIcon1}).addTo(map)
+                                .bindPopup(`Plane 1\nLat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
+                            else marker1.setLatLng(pos).bindPopup(`Plane 1\nLat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
 
-                        if (polyline) polyline.setLatLngs(trail);
-                        else polyline = L.polyline(trail, { color: 'blue' }).addTo(map);
+                            trail1.push(pos);
+                            if(trail1.length > MAX_TRAIL) trail1.shift();
+                            if(polyline1) polyline1.setLatLngs(trail1);
+                            else polyline1 = L.polyline(trail1,{color:'red'}).addTo(map);
+                        }
 
-                        if (followMode) map.panTo(pos, { animate: true });
+                        if(planeID === 2){
+                            if(!marker2) marker2 = L.marker(pos,{icon:planeIcon2}).addTo(map)
+                                .bindPopup(`Plane 2\nLat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
+                            else marker2.setLatLng(pos).bindPopup(`Plane 2\nLat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
+
+                            trail2.push(pos);
+                            if(trail2.length > MAX_TRAIL) trail2.shift();
+                            if(polyline2) polyline2.setLatLngs(trail2);
+                            else polyline2 = L.polyline(trail2,{color:'blue'}).addTo(map);
+                        }
+
+                        if(followMode) map.panTo(pos,{animate:true});
                     }
                 }
             });
@@ -162,4 +182,3 @@
     </script>
 </body>
 </html>
-
