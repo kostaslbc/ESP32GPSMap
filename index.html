@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Collector Phone - Multi ESP32 GPS</title>
+    <title>Multi-Plane GPS Tracker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
@@ -32,7 +32,7 @@
         <button id="disconnectBtn">Disconnect All</button>
     </div>
     <div id="map"></div>
-    <div id="status">Disconnected</div>
+    <div id="status">Initializing...</div>
 
     <!-- Leaflet -->
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -43,14 +43,13 @@
     <script>
     // ------------------- Firebase Setup -------------------
     const firebaseConfig = {
-       apiKey: "AIzaSyDAuSpFwWPN39RHpd1a_f9J4eO3ktaKGhY",
-  authDomain: "fir-esp-3ce92.firebaseapp.com",
-  databaseURL: "https://fir-esp-3ce92-default-rtdb.firebaseio.com",
-  projectId: "fir-esp-3ce92",
-  storageBucket: "fir-esp-3ce92.firebasestorage.app",
-  messagingSenderId: "458185267913",
-  appId: "1:458185267913:web:7d0759cb3caf9a67ca0b18"
-
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+        databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com",
+        projectId: "YOUR_PROJECT_ID",
+        storageBucket: "YOUR_PROJECT_ID.appspot.com",
+        messagingSenderId: "YOUR_SENDER_ID",
+        appId: "YOUR_APP_ID"
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
@@ -70,17 +69,53 @@
     let followMode = true;
     const MAX_TRAIL = 500;
     const planes = {};  // planeID -> {marker, trail, polyline}
-    const devices = []; // connected BLE devices
+    const devices = []; // BLE devices
 
     function setStatus(text) { document.getElementById('status').innerText = text; }
-
     function getPlaneColor(id) {
         const colors = ["blue","red","green","orange","purple","brown","pink"];
         return colors[id % colors.length];
     }
 
-    // ------------------- BLE Handling -------------------
+    // ------------------- Firebase Listener (Viewer Mode) -------------------
+    function listenPlanes() {
+        const planesRef = db.ref('planes');
+        planesRef.on('value', snapshot => {
+            const data = snapshot.val();
+            if (!data) return;
+
+            for (let planeID in data) {
+                const lat = data[planeID].lat;
+                const lng = data[planeID].lng;
+                const pos = [lat, lng];
+
+                if (!planes[planeID]) {
+                    planes[planeID] = {
+                        marker: L.marker(pos).addTo(map).bindPopup(`Plane ${planeID}`),
+                        trail: [],
+                        polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map)
+                    };
+                }
+
+                const plane = planes[planeID];
+                plane.marker.setLatLng(pos)
+                    .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
+                plane.trail.push(pos);
+                if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
+                plane.polyline.setLatLngs(plane.trail);
+
+                if (followMode) map.panTo(pos, { animate: true });
+            }
+        });
+    }
+
+    // ------------------- BLE Collector Mode -------------------
     async function connectESP32() {
+        if (!navigator.bluetooth) {
+            alert("BLE not supported on this device. Viewer mode only.");
+            return;
+        }
+
         try {
             const device = await navigator.bluetooth.requestDevice({
                 filters: [{ namePrefix: 'LoRaGPS' }],
@@ -121,14 +156,15 @@
         }
 
         const plane = planes[planeID];
-        plane.marker.setLatLng(pos).bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
+        plane.marker.setLatLng(pos)
+            .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
         plane.trail.push(pos);
         if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
         plane.polyline.setLatLngs(plane.trail);
 
         if (followMode) map.panTo(pos, { animate: true });
 
-        // Send GPS to Firebase
+        // Push to Firebase
         sendGPS(planeID, lat, lng);
     }
 
@@ -137,12 +173,16 @@
             if (d.device.gatt.connected) await d.device.gatt.disconnect();
         }
         devices.length = 0;
-        setStatus("Disconnected all");
+        setStatus("Disconnected all BLE devices");
         alert("All devices disconnected!");
     }
 
     document.getElementById('connectBtn').addEventListener('click', connectESP32);
     document.getElementById('disconnectBtn').addEventListener('click', disconnectAll);
+
+    // ------------------- Initialize -------------------
+    listenPlanes();
+    setStatus("Viewer mode active. Connect ESP32 if BLE is supported.");
     </script>
 </body>
 </html>
