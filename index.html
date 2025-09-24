@@ -28,7 +28,7 @@
 </head>
 <body>
     <div id="buttons">
-        <button id="connectBtn">Connect with planes</button>
+        <button id="connectBtn">Connect ESP32</button>
         <button id="disconnectBtn">Disconnect All</button>
     </div>
     <div id="map"></div>
@@ -66,7 +66,6 @@
     const map = L.map('map').setView([40.5, 23.0], 8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    let followMode = true;
     const MAX_TRAIL = 500;
     const planes = {};  // planeID -> {marker, trail, polyline}
     const devices = []; // BLE devices
@@ -103,18 +102,22 @@
                 plane.trail.push(pos);
                 if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
                 plane.polyline.setLatLngs(plane.trail);
-
-                if (followMode) map.panTo(pos, { animate: true });
             }
         });
     }
 
     // ------------------- BLE Collector Mode -------------------
+    const BLE_SUPPORTED = navigator.bluetooth !== undefined;
+
+    if (!BLE_SUPPORTED) {
+        document.getElementById('connectBtn').style.display = 'none';
+        setStatus("Viewer mode active (no BLE).");
+    } else {
+        setStatus("Collector mode active. Connect ESP32 if available.");
+    }
+
     async function connectESP32() {
-        if (!navigator.bluetooth) {
-            alert("BLE not supported on this device. Viewer mode only.");
-            return;
-        }
+        if (!BLE_SUPPORTED) return;
 
         try {
             const device = await navigator.bluetooth.requestDevice({
@@ -141,9 +144,10 @@
 
     function handleGPSData(event) {
         const value = event.target.value;
-        const lat = value.getFloat32(0, true);
-        const lng = value.getFloat32(4, true);
-        const planeID = value.getUint8(8);
+        const dataView = new DataView(value.buffer);  // Ensure compatibility
+        const lat = dataView.getFloat32(0, true);
+        const lng = dataView.getFloat32(4, true);
+        const planeID = dataView.getUint8(8);
 
         const pos = [lat, lng];
 
@@ -162,9 +166,7 @@
         if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
         plane.polyline.setLatLngs(plane.trail);
 
-        if (followMode) map.panTo(pos, { animate: true });
-
-        // Push to Firebase
+        // Send GPS to Firebase
         sendGPS(planeID, lat, lng);
     }
 
@@ -182,8 +184,6 @@
 
     // ------------------- Initialize -------------------
     listenPlanes();
-    setStatus("Viewer mode active. Connect ESP32 if BLE is supported.");
     </script>
 </body>
 </html>
-
