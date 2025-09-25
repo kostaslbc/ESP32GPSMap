@@ -244,8 +244,8 @@
         const dataView = new DataView(value.buffer); 
         const lat = dataView.getFloat32(0, true);
         const lng = dataView.getFloat32(4, true);
-        const alt = dataView.getFloat32(8, true);      // New: altitude
-        const airspeed = dataView.getFloat32(12, true); // New: airspeed
+        const alt = dataView.getFloat32(8, true);      // altitude
+        const airspeed = dataView.getFloat32(12, true); // airspeed
         const planeID = dataView.getUint8(16);
         const pos = [lat, lng];
 
@@ -264,6 +264,7 @@
         if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
         plane.polyline.setLatLngs(plane.trail);
 
+        // ✅ Update Firebase including alt and airspeed
         if (auth.currentUser) {
             db.ref('planes/' + planeID).set({
                 lat: lat,
