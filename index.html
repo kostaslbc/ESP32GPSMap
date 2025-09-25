@@ -1,34 +1,64 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>BLE Plane Tracker</title>
+    <title>Multi-Plane GPS Tracker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
         html, body { margin:0; padding:0; height:100%; width:100%; }
         #map { height:100%; width:100%; z-index:1; }
-        #buttons { position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
-                   z-index: 9999; background: rgba(255,255,255,0.95); padding: 8px 12px;
-                   border-radius: 10px; display: flex; gap: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
-        #buttons button { padding: 10px 18px; font-size: 15px; border: none; border-radius: 6px;
-                          cursor: pointer; font-weight: bold; }
+        #buttons {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            background: rgba(255,255,255,0.95);
+            padding: 8px 12px;
+            border-radius: 10px;
+            display: flex;
+            gap: 10px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        #buttons button { padding: 10px 18px; font-size: 15px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
         #connectBtn { background-color:#28a745; color:white; }
         #disconnectBtn { background-color:#dc3545; color:white; }
         #spectatorBtn { background-color:#007bff; color:white; }
-        #clearTrailBtn { background-color:#ffa500; color:white; }
-        #legend { position: fixed; top: 70px; left: 10px; background: rgba(255,255,255,0.95);
-                  padding: 10px; border-radius: 6px; z-index: 9999; font-size: 14px;
-                  max-height: 300px; overflow-y: auto; }
-        #status { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
-                  background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 5px;
-                  z-index: 9999; font-size: 14px; }
+        #legend {
+            position: fixed;
+            top: 70px;
+            left: 10px;
+            background: rgba(255,255,255,0.95);
+            padding: 10px;
+            border-radius: 6px;
+            z-index: 9999;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        #status { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 5px; z-index: 9999; font-size: 14px; }
         .legend-item { cursor: pointer; margin-bottom: 4px; }
         .legend-color { display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:middle; }
 
-        #loginBox { position: fixed; top: 150px; left: 50%; transform: translateX(-50%);
-                    background: #fff; padding: 10px; border-radius: 6px; z-index: 9999;
-                    box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: none; }
-        #loginBox input { display: block; margin-bottom: 6px; padding: 6px; width: 200px; }
+        /* Login box */
+        #loginBox {
+            position: fixed;
+            top: 150px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #fff;
+            padding: 10px;
+            border-radius: 6px;
+            z-index: 9999;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            display: none;
+        }
+        #loginBox input {
+            display: block;
+            margin-bottom: 6px;
+            padding: 6px;
+            width: 200px;
+        }
     </style>
 </head>
 <body>
@@ -36,12 +66,12 @@
         <button id="connectBtn" disabled>Connect ESP32</button>
         <button id="disconnectBtn">Disconnect All</button>
         <button id="spectatorBtn">Spectator Mode</button>
-        <button id="clearTrailBtn">Clear Trails</button>
     </div>
     <div id="legend"><b>Planes:</b><br></div>
     <div id="map"></div>
     <div id="status">Initializing...</div>
 
+    <!-- Login box -->
     <div id="loginBox">
         <input id="email" type="email" placeholder="Email">
         <input id="password" type="password" placeholder="Password">
@@ -49,7 +79,9 @@
         <button onclick="logout()">Logout</button>
     </div>
 
+    <!-- Leaflet -->
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
@@ -69,17 +101,17 @@
     const db = firebase.database();
     const auth = firebase.auth();
 
-    // ------------------- Auth -------------------
+    // ------------------- Auth Handling -------------------
     function login() {
         const email = document.getElementById("email").value;
         const password = document.getElementById("password").value;
         auth.signInWithEmailAndPassword(email, password)
-            .then(user => {
-                setStatus("Signed in as " + user.user.email);
-                document.getElementById("loginBox").style.display = "none";
-                document.getElementById("connectBtn").disabled = false;
-            })
-            .catch(err => alert("Login failed: " + err.message));
+        .then(user => {
+            setStatus("Signed in as " + user.user.email);
+            document.getElementById("loginBox").style.display = "none";
+            document.getElementById("connectBtn").disabled = false;
+        })
+        .catch(err => alert("Login failed: " + err.message));
     }
 
     function logout() {
@@ -102,7 +134,7 @@
         }
     });
 
-    // ------------------- Map -------------------
+    // ------------------- Leaflet Map -------------------
     const map = L.map('map').setView([40.5, 23.0], 8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
@@ -112,7 +144,7 @@
     let spectatorMode = false;
     let currentFollow = null;
 
-    function setStatus(text){ document.getElementById('status').innerText = text; }
+    function setStatus(text) { document.getElementById('status').innerText = text; }
     function getPlaneColor(id) {
         const colors = ["blue","red","green","orange","purple","brown","pink"];
         return colors[id % colors.length];
@@ -136,14 +168,18 @@
         }
     }
 
-    // ------------------- Firebase Planes -------------------
+    // ------------------- Firebase Listener -------------------
     function listenPlanes() {
-        db.ref('planes').on('value', snapshot => {
+        const planesRef = db.ref('planes');
+        planesRef.on('value', snapshot => {
             const data = snapshot.val();
             if (!data) return;
 
             for (let planeID in data) {
-                const {lat, lng, alt=0, airspeed=0} = data[planeID];
+                const lat = data[planeID].lat;
+                const lng = data[planeID].lng;
+                const alt = data[planeID].alt || 0;
+                const airspeed = data[planeID].airspeed || 0;
                 const pos = [lat, lng];
 
                 if (!planes[planeID]) {
@@ -167,8 +203,9 @@
         });
     }
 
-    // ------------------- BLE / Collector -------------------
+    // ------------------- BLE Collector Mode -------------------
     const BLE_SUPPORTED = navigator.bluetooth !== undefined;
+
     document.getElementById('spectatorBtn').addEventListener('click', () => {
         spectatorMode = true;
         document.getElementById('connectBtn').style.display = 'none';
@@ -190,17 +227,7 @@
             const characteristic = await service.getCharacteristic("abcd1234-5678-90ab-cdef-1234567890ab");
 
             await characteristic.startNotifications();
-            characteristic.addEventListener('characteristicvaluechanged', event => {
-                const value = event.target.value;
-                const dataView = new DataView(value.buffer);
-                const lat = dataView.getFloat32(0, true);
-                const lng = dataView.getFloat32(4, true);
-                const alt = dataView.getFloat32(8, true);
-                const airspeed = dataView.getFloat32(12, true);
-                const planeID = dataView.getUint8(16);
-
-                db.ref('planes/' + planeID).set({ lat, lng, alt, airspeed, timestamp: Date.now() });
-            });
+            characteristic.addEventListener('characteristicvaluechanged', handleGPSData);
 
             devices.push({device, characteristic});
             setStatus(`Connected devices: ${devices.length}`);
@@ -212,26 +239,54 @@
         }
     }
 
+    function handleGPSData(event) {
+        const value = event.target.value;
+        const dataView = new DataView(value.buffer); 
+        const lat = dataView.getFloat32(0, true);
+        const lng = dataView.getFloat32(4, true);
+        const alt = dataView.getFloat32(8, true);      // altitude
+        const airspeed = dataView.getFloat32(12, true); // airspeed
+        const planeID = dataView.getUint8(16);
+        const pos = [lat, lng];
+
+        if (!planes[planeID]) {
+            planes[planeID] = {
+                marker: L.marker(pos).addTo(map).bindPopup(`Plane ${planeID}`),
+                trail: [],
+                polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map)
+            };
+        }
+
+        const plane = planes[planeID];
+        plane.marker.setLatLng(pos)
+            .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
+        plane.trail.push(pos);
+        if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
+        plane.polyline.setLatLngs(plane.trail);
+
+        // ✅ Update Firebase including alt and airspeed
+        if (auth.currentUser) {
+            db.ref('planes/' + planeID).set({
+                lat: lat,
+                lng: lng,
+                alt: alt,
+                airspeed: airspeed,
+                timestamp: Date.now()
+            });
+        }
+    }
+
     async function disconnectAll() {
-        for (let d of devices) if (d.device.gatt.connected) await d.device.gatt.disconnect();
+        for (let d of devices) {
+            if (d.device.gatt.connected) await d.device.gatt.disconnect();
+        }
         devices.length = 0;
         setStatus("Disconnected all BLE devices");
         alert("All devices disconnected!");
     }
 
-    // ------------------- Clear Trails -------------------
-    function clearTrails() {
-        for (let planeID in planes) {
-            planes[planeID].trail = [];
-            planes[planeID].polyline.setLatLngs([]);
-        }
-        setStatus("All trails cleared.");
-    }
-
-    // ------------------- Event Listeners -------------------
     document.getElementById('connectBtn').addEventListener('click', connectESP32);
     document.getElementById('disconnectBtn').addEventListener('click', disconnectAll);
-    document.getElementById('clearTrailBtn').addEventListener('click', clearTrails);
 
     // ------------------- Initialize -------------------
     listenPlanes();
@@ -239,3 +294,4 @@
     </script>
 </body>
 </html>
+
