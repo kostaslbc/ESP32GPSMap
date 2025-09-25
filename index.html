@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Multi-Plane GPS Tracker</title>
+    <title>Multi-Plane GPS Tracker + Airliners</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
@@ -141,6 +141,7 @@
     const MAX_TRAIL = 500;
     const planes = {};
     const devices = [];
+    const airliners = {}; // live flights
     let spectatorMode = false;
     let currentFollow = null;
 
@@ -244,8 +245,8 @@
         const dataView = new DataView(value.buffer); 
         const lat = dataView.getFloat32(0, true);
         const lng = dataView.getFloat32(4, true);
-        const alt = dataView.getFloat32(8, true);      // altitude
-        const airspeed = dataView.getFloat32(12, true); // airspeed
+        const alt = dataView.getFloat32(8, true);
+        const airspeed = dataView.getFloat32(12, true);
         const planeID = dataView.getUint8(16);
         const pos = [lat, lng];
 
@@ -264,15 +265,8 @@
         if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
         plane.polyline.setLatLngs(plane.trail);
 
-        // ✅ Update Firebase including alt and airspeed
         if (auth.currentUser) {
-            db.ref('planes/' + planeID).set({
-                lat: lat,
-                lng: lng,
-                alt: alt,
-                airspeed: airspeed,
-                timestamp: Date.now()
-            });
+            db.ref('planes/' + planeID).set({ lat, lng, alt, airspeed, timestamp: Date.now() });
         }
     }
 
@@ -287,6 +281,46 @@
 
     document.getElementById('connectBtn').addEventListener('click', connectESP32);
     document.getElementById('disconnectBtn').addEventListener('click', disconnectAll);
+
+    // ------------------- Live Airliners -------------------
+    async function fetchAirliners() {
+        try {
+            const bbox = [40, 42, 22, 25]; // bounding box example
+            const response = await fetch(`https://opensky-network.org/api/states/all?lamin=${bbox[0]}&lamax=${bbox[1]}&lomin=${bbox[2]}&lomax=${bbox[3]}`);
+            const data = await response.json();
+            return data.states || [];
+        } catch(err) {
+            console.error("OpenSky fetch error:", err);
+            return [];
+        }
+    }
+
+    async function updateAirliners() {
+        const flights = await fetchAirliners();
+        flights.forEach(flight => {
+            const [icao24, callsign,, , lat, lon, alt, vel] = flight;
+            if (!lat || !lon) return;
+
+            if (!airliners[icao24]) {
+                airliners[icao24] = L.marker([lat, lon], {
+                    icon: L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/149/149071.png', iconSize:[20,20]})
+                }).addTo(map).bindPopup(`Callsign: ${callsign}<br>Alt: ${alt} m<br>Speed: ${vel} m/s`);
+            } else {
+                airliners[icao24].setLatLng([lat, lon]);
+                airliners[icao24].setPopupContent(`Callsign: ${callsign}<br>Alt: ${alt} m<br>Speed: ${vel} m/s`);
+            }
+        });
+
+        // Remove old flights
+        Object.keys(airliners).forEach(id => {
+            if (!flights.some(f => f[0] === id)) {
+                map.removeLayer(airliners[id]);
+                delete airliners[id];
+            }
+        });
+    }
+
+    setInterval(updateAirliners, 10000); // refresh every 10s
 
     // ------------------- Initialize -------------------
     listenPlanes();
