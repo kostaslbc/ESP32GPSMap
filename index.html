@@ -111,17 +111,13 @@
             document.getElementById("loginBox").style.display = "none";
             document.getElementById("connectBtn").disabled = false;
         })
-        .catch(err => {
-            alert("Login failed: " + err.message);
-        });
+        .catch(err => alert("Login failed: " + err.message));
     }
 
     function logout() {
         auth.signOut().then(() => {
             setStatus("Logged out");
-            if (!spectatorMode) {
-                document.getElementById("loginBox").style.display = "block";
-            }
+            if (!spectatorMode) document.getElementById("loginBox").style.display = "block";
             document.getElementById("connectBtn").disabled = true;
         });
     }
@@ -133,9 +129,7 @@
             document.getElementById("connectBtn").disabled = false;
         } else {
             setStatus("Not signed in");
-            if (!spectatorMode) {
-                document.getElementById("loginBox").style.display = "block";
-            }
+            if (!spectatorMode) document.getElementById("loginBox").style.display = "block";
             document.getElementById("connectBtn").disabled = true;
         }
     });
@@ -184,27 +178,26 @@
             for (let planeID in data) {
                 const lat = data[planeID].lat;
                 const lng = data[planeID].lng;
+                const alt = data[planeID].alt || 0;
+                const airspeed = data[planeID].airspeed || 0;
                 const pos = [lat, lng];
 
                 if (!planes[planeID]) {
                     planes[planeID] = {
                         marker: L.marker(pos).addTo(map).bindPopup(`Plane ${planeID}`),
                         trail: [],
-                        polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map),
-                        follow: false
+                        polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map)
                     };
                 }
 
                 const plane = planes[planeID];
                 plane.marker.setLatLng(pos)
-                    .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
+                    .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
                 plane.trail.push(pos);
                 if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
                 plane.polyline.setLatLngs(plane.trail);
 
-                if (currentFollow == planeID) {
-                    map.panTo(pos, { animate: true });
-                }
+                if (currentFollow == planeID) map.panTo(pos, { animate: true });
             }
             updateLegend();
         });
@@ -217,22 +210,18 @@
         spectatorMode = true;
         document.getElementById('connectBtn').style.display = 'none';
         document.getElementById('disconnectBtn').style.display = 'none';
-        document.getElementById('loginBox').style.display = 'none'; // hide login in spectator mode
+        document.getElementById('loginBox').style.display = 'none';
         setStatus("Spectator mode active. Viewing planes via Firebase.");
     });
 
     async function connectESP32() {
         if (!BLE_SUPPORTED || spectatorMode) return;
-        if (!auth.currentUser) {
-            alert("Please log in first!");
-            return;
-        }
+        if (!auth.currentUser) { alert("Please log in first!"); return; }
         try {
             const device = await navigator.bluetooth.requestDevice({
                 filters: [{ namePrefix: 'LoRaGPS' }],
                 optionalServices: ["12345678-1234-1234-1234-1234567890ab"]
             });
-
             const server = await device.gatt.connect();
             const service = await server.getPrimaryService("12345678-1234-1234-1234-1234567890ab");
             const characteristic = await service.getCharacteristic("abcd1234-5678-90ab-cdef-1234567890ab");
@@ -255,21 +244,22 @@
         const dataView = new DataView(value.buffer); 
         const lat = dataView.getFloat32(0, true);
         const lng = dataView.getFloat32(4, true);
-        const planeID = dataView.getUint8(8);
+        const alt = dataView.getFloat32(8, true);      // New: altitude
+        const airspeed = dataView.getFloat32(12, true); // New: airspeed
+        const planeID = dataView.getUint8(16);
         const pos = [lat, lng];
 
         if (!planes[planeID]) {
             planes[planeID] = {
                 marker: L.marker(pos).addTo(map).bindPopup(`Plane ${planeID}`),
                 trail: [],
-                polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map),
-                follow: false
+                polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map)
             };
         }
 
         const plane = planes[planeID];
         plane.marker.setLatLng(pos)
-            .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
+            .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
         plane.trail.push(pos);
         if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
         plane.polyline.setLatLngs(plane.trail);
@@ -278,6 +268,8 @@
             db.ref('planes/' + planeID).set({
                 lat: lat,
                 lng: lng,
+                alt: alt,
+                airspeed: airspeed,
                 timestamp: Date.now()
             });
         }
