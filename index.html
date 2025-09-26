@@ -67,7 +67,7 @@
         <button id="disconnectBtn">Disconnect All</button>
         <button id="spectatorBtn">Spectator Mode</button>
     </div>
-    <div id="legend"><b>Planes:</b><br></div>
+    <div id="legend"><b>Planes & Airliners:</b><br></div>
     <div id="map"></div>
     <div id="status">Initializing...</div>
 
@@ -79,8 +79,10 @@
         <button onclick="logout()">Logout</button>
     </div>
 
-    <!-- Leaflet -->
+    <!-- Leaflet library -->
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- For Leaflet rotated marker -->
+    <script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/0.2.0/leaflet.rotatedMarker.js"></script>
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
@@ -135,14 +137,21 @@
     });
 
     // ------------------- Leaflet Map -------------------
-    const map = L.map('map').setView([40.5, 23.0], 8);
+    const map = L.map('map').setView([40.6401, 22.9444], 8); // Focus on Thessaloniki
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     const MAX_TRAIL = 500;
-    const planes = {};
+    const planes = {};      // RC planes
+    const airliners = {};   // AviationStack flights
     const devices = [];
     let spectatorMode = false;
     let currentFollow = null;
+    let airlinersCount = 0;
+    const AIRLINER_ICON = L.icon({
+        iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Airplane_silhouette.svg/32px-Airplane_silhouette.svg.png',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+    });
 
     function setStatus(text) { document.getElementById('status').innerText = text; }
     function getPlaneColor(id) {
@@ -153,17 +162,17 @@
     function updateLegend() {
         const legendDiv = document.getElementById('legend');
         legendDiv.innerHTML = "<b>Planes & Airliners:</b><br>";
+        // RC planes first
         for (let planeID in planes) {
             if(!planes[planeID].isAirliner) {
-                const plane = planes[planeID];
                 const color = getPlaneColor(planeID);
                 const item = document.createElement('div');
                 item.className = "legend-item";
-                item.innerHTML = `<span class="legend-color" style="background:${color}"></span>Plane ${planeID}`;
+                item.innerHTML = `<span class="legend-color" style="background:${color}"></span>RC Plane ${planeID}`;
                 item.onclick = () => {
                     currentFollow = planeID;
-                    map.panTo(plane.marker.getLatLng(), {animate:true});
-                    setStatus(`Following Plane ${planeID}`);
+                    map.panTo(planes[planeID].marker.getLatLng(), {animate:true});
+                    setStatus(`Following RC Plane ${planeID}`);
                 };
                 legendDiv.appendChild(item);
             }
@@ -177,7 +186,7 @@
         }
     }
 
-    // ------------------- Firebase Listener -------------------
+    // ------------------- Firebase Listener for RC Planes -------------------
     function listenPlanes() {
         const planesRef = db.ref('planes');
         planesRef.on('value', snapshot => {
@@ -193,7 +202,7 @@
 
                 if (!planes[planeID]) {
                     planes[planeID] = {
-                        marker: L.marker(pos).addTo(map).bindPopup(`Plane ${planeID}`),
+                        marker: L.marker(pos).addTo(map).bindPopup(`RC Plane ${planeID}`),
                         trail: [],
                         polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map),
                         isAirliner: false
@@ -202,7 +211,7 @@
 
                 const plane = planes[planeID];
                 plane.marker.setLatLng(pos)
-                    .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
+                    .bindPopup(`RC Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
                 plane.trail.push(pos);
                 if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
                 plane.polyline.setLatLngs(plane.trail);
@@ -251,17 +260,17 @@
 
     function handleGPSData(event) {
         const value = event.target.value;
-        const dataView = new DataView(value.buffer); 
+        const dataView = new DataView(value.buffer);
         const lat = dataView.getFloat32(0, true);
         const lng = dataView.getFloat32(4, true);
-        const alt = dataView.getFloat32(8, true);      // altitude
-        const airspeed = dataView.getFloat32(12, true); // airspeed
+        const alt = dataView.getFloat32(8, true);
+        const airspeed = dataView.getFloat32(12, true);
         const planeID = dataView.getUint8(16);
         const pos = [lat, lng];
 
         if (!planes[planeID]) {
             planes[planeID] = {
-                marker: L.marker(pos).addTo(map).bindPopup(`Plane ${planeID}`),
+                marker: L.marker(pos).addTo(map).bindPopup(`RC Plane ${planeID}`),
                 trail: [],
                 polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map),
                 isAirliner: false
@@ -270,12 +279,11 @@
 
         const plane = planes[planeID];
         plane.marker.setLatLng(pos)
-            .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
+            .bindPopup(`RC Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
         plane.trail.push(pos);
         if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
         plane.polyline.setLatLngs(plane.trail);
 
-        // ✅ Update Firebase including alt and airspeed
         if (auth.currentUser) {
             db.ref('planes/' + planeID).set({
                 lat: lat,
@@ -299,95 +307,112 @@
     document.getElementById('connectBtn').addEventListener('click', connectESP32);
     document.getElementById('disconnectBtn').addEventListener('click', disconnectAll);
 
+    // ------------------- Thessaloniki center distance filter -------------------
+    function getDistanceFromThessaloniki(lat, lng) {
+        const R = 6371; // earth radius in km
+        const lat1 = 40.6401 * Math.PI / 180;
+        const lng1 = 22.9444 * Math.PI / 180;
+        const lat2 = lat * Math.PI / 180;
+        const lng2 = lng * Math.PI / 180;
+
+        const dLat = lat2 - lat1;
+        const dLng = lng2 - lng1;
+
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(lat1) * Math.cos(lat2) *
+                  Math.sin(dLng/2) * Math.sin(dLng/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
     // ------------------- AviationStack API Integration -------------------
     const AIRLINER_UPDATE_INTERVAL = 30000; // 30 seconds
-    const AIRLINER_ICON = L.icon({
-        iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Airplane_silhouette.svg/32px-Airplane_silhouette.svg.png',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-    });
-    let airliners = {};
-    let airlinersCount = 0;
-//
+    const API_KEY = '3b098191d09c6153cc3083a4028f34d8';
+    const RADIUS_KM = 150; // Set radius in km
+
     async function fetchAirliners() {
-    try {
-        // Get active flights only, limit 50 results, optionally add dep_iata or arr_iata filter
-        const url = 'https://api.aviationstack.com/v1/flights?access_key=3b098191d09c6153cc3083a4028f34d8&limit=50&flight_status=active';
-        const response = await fetch(url);
-        const data = await response.json();
-        if (!data.data || data.data.length === 0) {
-            setStatus("No live flights data returned by API.");
-            return;
-        }
+        try {
+            // Get active flights, limit 100, focused on Greece by dep_iata or arr_iata could be added if desired
+            const url = `https://api.aviationstack.com/v1/flights?access_key=${API_KEY}&limit=100&flight_status=active`;
 
-        airlinersCount = 0;
-        const existingIDs = new Set(Object.keys(airliners));
-        const newIDs = new Set();
+            const response = await fetch(url);
+            const data = await response.json();
 
-        for (const flight of data.data) {
-            if (!flight.live || !flight.live.latitude || !flight.live.longitude || flight.live.is_ground) continue;
-
-            const id = flight.flight.icao || flight.flight.iata || flight.flight.number;
-            if(!id) continue;
-            newIDs.add(id);
-
-            const lat = flight.live.latitude;
-            const lng = flight.live.longitude;
-            const alt = flight.live.altitude || 0;
-            const heading = flight.live.direction || 0;
-            const speed = flight.live.speed_horizontal || 0;
-
-            const pos = [lat, lng];
-
-            if (!airliners[id]) {
-                airliners[id] = {
-                    marker: L.marker(pos, {icon: AIRLINER_ICON, rotationAngle: heading}).addTo(map)
-                };
-            } else {
-                airliners[id].marker.setLatLng(pos);
-                airliners[id].marker.setRotationAngle(heading);
+            if (!data.data || data.data.length === 0) {
+                setStatus("No live airliners found in area.");
+                return;
             }
 
-            airliners[id].marker.bindPopup(
-                `Flight: ${flight.flight.iata || flight.flight.icao || ''}<br>` +
-                `Airline: ${flight.airline.name}<br>` +
-                `From: ${flight.departure.airport}<br>` +
-                `To: ${flight.arrival.airport}<br>` +
-                `Altitude: ${alt} m<br>Speed: ${speed.toFixed(1)} km/h`
-            );
-            airliners[id].isAirliner = true;
-            planes[id] = airliners[id]; // Add to common planes dict for legend
-            airlinersCount++;
-        }
+            airlinersCount = 0;
+            const existingIDs = new Set(Object.keys(airliners));
+            const newIDs = new Set();
 
-        // Remove airliners that disappeared
-        for(const id of existingIDs){
-            if(!newIDs.has(id)){
-                map.removeLayer(airliners[id].marker);
-                delete airliners[id];
-                delete planes[id];
+            for (const flight of data.data) {
+                if (!flight.live || !flight.live.latitude || !flight.live.longitude || flight.live.is_ground) continue;
+
+                const lat = flight.live.latitude;
+                const lng = flight.live.longitude;
+
+                // Filter by distance from Thessaloniki center
+                if (getDistanceFromThessaloniki(lat, lng) > RADIUS_KM) continue;
+
+                const id = flight.flight.icao || flight.flight.iata || flight.flight.number;
+                if (!id) continue;
+
+                newIDs.add(id);
+
+                const alt = flight.live.altitude || 0;
+                const heading = flight.live.direction || 0;
+                const speed = flight.live.speed_horizontal || 0;
+
+                const pos = [lat, lng];
+
+                if (!airliners[id]) {
+                    airliners[id] = {
+                        marker: L.marker(pos, {icon: AIRLINER_ICON, rotationAngle: heading}).addTo(map)
+                    };
+                } else {
+                    airliners[id].marker.setLatLng(pos);
+                    airliners[id].marker.setRotationAngle(heading);
+                }
+
+                airliners[id].marker.bindPopup(
+                    `Flight: ${flight.flight.iata || flight.flight.icao || ''}<br>` +
+                    `Airline: ${flight.airline.name}<br>` +
+                    `From: ${flight.departure.airport}<br>` +
+                    `To: ${flight.arrival.airport}<br>` +
+                    `Altitude: ${alt} m<br>` +
+                    `Speed: ${speed.toFixed(1)} km/h`
+                );
+
+                airliners[id].isAirliner = true;
+                planes[id] = airliners[id]; // Add to common planes object for legend consistency
+                airlinersCount++;
             }
+
+            // Remove markers for flights no longer live/found
+            for(const id of existingIDs) {
+                if(!newIDs.has(id)) {
+                    map.removeLayer(airliners[id].marker);
+                    delete airliners[id];
+                    delete planes[id];
+                }
+            }
+
+            updateLegend();
+            setStatus(`Showing ${airlinersCount} real-time airliners within ${RADIUS_KM} km of Thessaloniki. Use Collector or Spectator mode for RC planes.`);
+        } catch (e) {
+            console.error(e);
+            setStatus("Failed to fetch airliners data.");
         }
-        updateLegend();
-        setStatus(`Showing ${airlinersCount} real-time airliners. Use Collector or Spectator mode for RC planes.`);
-    } catch (e) {
-        console.error(e);
-        setStatus("Failed to fetch airliners data.");
     }
-}
-
-//
     setInterval(fetchAirliners, AIRLINER_UPDATE_INTERVAL);
     fetchAirliners();
 
     // ------------------- Initialize -------------------
     listenPlanes();
     setStatus("Page loaded. Use Collector or Spectator mode.");
+
     </script>
-    <!-- Add leaflet-rotatedmarker for rotation -->
-    <script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/0.2.0/leaflet.rotatedMarker.js"></script>
 </body>
 </html>
-
-
-
