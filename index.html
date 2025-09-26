@@ -308,68 +308,75 @@
     });
     let airliners = {};
     let airlinersCount = 0;
-
+//
     async function fetchAirliners() {
-        try {
-            const response = await fetch('https://api.aviationstack.com/v1/flights?access_key=3b098191d09c6153cc3083a4028f34d8&limit=50');
-            const data = await response.json();
-            if (!data.data) return;
-
-            airlinersCount = 0;
-            const existingIDs = new Set(Object.keys(airliners));
-            const newIDs = new Set();
-
-            for (const flight of data.data) {
-                if (!flight.live || !flight.live.latitude || !flight.live.longitude) continue;
-
-                const id = flight.flight.icao || flight.flight.iata || flight.flight.number;
-                newIDs.add(id);
-
-                const lat = flight.live.latitude;
-                const lng = flight.live.longitude;
-                const alt = flight.live.altitude || 0;
-                const heading = flight.live.direction || 0;
-                const speed = flight.live.speed_horizontal || 0;
-
-                const pos = [lat, lng];
-
-                if (!airliners[id]) {
-                    airliners[id] = {
-                        marker: L.marker(pos, {icon: AIRLINER_ICON, rotationAngle: heading}).addTo(map)
-                    };
-                } else {
-                    airliners[id].marker.setLatLng(pos);
-                    airliners[id].marker.setRotationAngle(heading);
-                }
-
-                airliners[id].marker.bindPopup(
-                    `Flight: ${flight.flight.iata || flight.flight.icao || ''}<br>` +
-                    `Airline: ${flight.airline.name}<br>` +
-                    `From: ${flight.departure.airport}<br>` +
-                    `To: ${flight.arrival.airport}<br>` +
-                    `Altitude: ${alt} m<br>Speed: ${speed.toFixed(1)} km/h`
-                );
-                airliners[id].isAirliner = true;
-                planes[id] = airliners[id]; // Add to common planes dict for legend
-                airlinersCount++;
-            }
-
-            // Remove airliners that disappeared
-            for(const id of existingIDs){
-                if(!newIDs.has(id)){
-                    map.removeLayer(airliners[id].marker);
-                    delete airliners[id];
-                    delete planes[id];
-                }
-            }
-            updateLegend();
-            setStatus(`Showing ${airlinersCount} real-time airliners. Use Collector or Spectator mode for RC planes.`);
-        } catch (e) {
-            console.error(e);
-            setStatus("Failed to fetch airliners data.");
+    try {
+        // Get active flights only, limit 50 results, optionally add dep_iata or arr_iata filter
+        const url = 'https://api.aviationstack.com/v1/flights?access_key=YOUR_API_KEY_HERE&limit=50&flight_status=active';
+        const response = await fetch(url);
+        const data = await response.json();
+        if (!data.data || data.data.length === 0) {
+            setStatus("No live flights data returned by API.");
+            return;
         }
-    }
 
+        airlinersCount = 0;
+        const existingIDs = new Set(Object.keys(airliners));
+        const newIDs = new Set();
+
+        for (const flight of data.data) {
+            if (!flight.live || !flight.live.latitude || !flight.live.longitude || flight.live.is_ground) continue;
+
+            const id = flight.flight.icao || flight.flight.iata || flight.flight.number;
+            if(!id) continue;
+            newIDs.add(id);
+
+            const lat = flight.live.latitude;
+            const lng = flight.live.longitude;
+            const alt = flight.live.altitude || 0;
+            const heading = flight.live.direction || 0;
+            const speed = flight.live.speed_horizontal || 0;
+
+            const pos = [lat, lng];
+
+            if (!airliners[id]) {
+                airliners[id] = {
+                    marker: L.marker(pos, {icon: AIRLINER_ICON, rotationAngle: heading}).addTo(map)
+                };
+            } else {
+                airliners[id].marker.setLatLng(pos);
+                airliners[id].marker.setRotationAngle(heading);
+            }
+
+            airliners[id].marker.bindPopup(
+                `Flight: ${flight.flight.iata || flight.flight.icao || ''}<br>` +
+                `Airline: ${flight.airline.name}<br>` +
+                `From: ${flight.departure.airport}<br>` +
+                `To: ${flight.arrival.airport}<br>` +
+                `Altitude: ${alt} m<br>Speed: ${speed.toFixed(1)} km/h`
+            );
+            airliners[id].isAirliner = true;
+            planes[id] = airliners[id]; // Add to common planes dict for legend
+            airlinersCount++;
+        }
+
+        // Remove airliners that disappeared
+        for(const id of existingIDs){
+            if(!newIDs.has(id)){
+                map.removeLayer(airliners[id].marker);
+                delete airliners[id];
+                delete planes[id];
+            }
+        }
+        updateLegend();
+        setStatus(`Showing ${airlinersCount} real-time airliners. Use Collector or Spectator mode for RC planes.`);
+    } catch (e) {
+        console.error(e);
+        setStatus("Failed to fetch airliners data.");
+    }
+}
+
+//
     setInterval(fetchAirliners, AIRLINER_UPDATE_INTERVAL);
     fetchAirliners();
 
@@ -381,4 +388,5 @@
     <script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/0.2.0/leaflet.rotatedMarker.js"></script>
 </body>
 </html>
+
 
