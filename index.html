@@ -279,10 +279,11 @@
 
     // OpenSky free tier integration for Greece region (anonymous)
 
-   const AIRLINER_ICON = L.icon({
-  iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGZpbGw9InJlZCIgZD0iTTQ4My4zIDE4NS4xTDM4MC4yIDEwOS41IDUxIDUxNmgyOXYtNzJoMzM0LTIwNS4xem0tMTQ3LjctNjcuM2wtMTAxIDg2LjVMMjk5LjkgMjM4IDE4MiAxNjBsMTAzLTM3LjJsNDIuNi00Ni4zeiIvPjwvc3ZnPg==',
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
+  // Replace your active AIRLINER_ICON with this simple red icon
+const AIRLINER_ICON = L.icon({
+  iconUrl: 'data:image/svg+xml;base64,PHN2ZyBmaWxsPSJyZWQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBkPSJNOCAxMmg4bDIuNjItNS43MiAxLjMyLS43NS0xLjMyLS43NS0yLjYyLTUuNzJIOGEyIDIgMCAwIDAtMiAyaDBsLTEuNzIgNi42Ni0xLjM4LjY3IDEtMy4zIDYuNjYtNC40TDggMTJoMCIvPjwvc3ZnPg==',
+  iconSize: [24, 24],
+  iconAnchor: [12, 12]
 });
 
     const airliners = {};
@@ -368,4 +369,5 @@
     </script>
 </body>
 </html>
+
 
