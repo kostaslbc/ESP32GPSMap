@@ -311,7 +311,7 @@
 
     async function fetchAirliners() {
         try {
-            const response = await fetch('https://api.aviationstack.com/v1/flights?access_key=YOUR_API_KEY_HERE&limit=50');
+            const response = await fetch('https://api.aviationstack.com/v1/flights?access_key=3b098191d09c6153cc3083a4028f34d8&limit=50');
             const data = await response.json();
             if (!data.data) return;
 
@@ -381,3 +381,4 @@
     <script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/0.2.0/leaflet.rotatedMarker.js"></script>
 </body>
 </html>
+
