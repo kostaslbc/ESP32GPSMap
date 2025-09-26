@@ -312,7 +312,7 @@
     async function fetchAirliners() {
     try {
         // Get active flights only, limit 50 results, optionally add dep_iata or arr_iata filter
-        const url = 'https://api.aviationstack.com/v1/flights?access_key=YOUR_API_KEY_HERE&limit=50&flight_status=active';
+        const url = 'https://api.aviationstack.com/v1/flights?access_key=3b098191d09c6153cc3083a4028f34d8&limit=50&flight_status=active';
         const response = await fetch(url);
         const data = await response.json();
         if (!data.data || data.data.length === 0) {
@@ -388,5 +388,6 @@
     <script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/0.2.0/leaflet.rotatedMarker.js"></script>
 </body>
 </html>
+
 
 
