@@ -1,135 +1,253 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Multi-Plane & Airliner GPS Tracker with OpenSky</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ESP32 GPS Map BLE with OpenSky Free Traffic</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
-	
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+        html, body { margin:0; padding:0; height:100%; width:100%; }
+        #map { height:100%; width:100%; z-index:1; }
+        #buttons {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            background: rgba(255,255,255,0.95);
+            padding: 8px 12px;
+            border-radius: 10px;
+            display: flex;
+            gap: 10px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        #buttons button {
+            padding: 10px 18px;
+            font-size: 15px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #connectBtn { background-color:#28a745; color:white; }
+        #disconnectBtn { background-color:#dc3545; color:white; }
+        #clearBtn { background-color:#ffc107; color:black; }
+        #followBtn { background-color:#007bff; color:white; }
+        #status {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            z-index: 9999;
+            font-size: 14px;
+        }
+        .leaflet-control-attribution,
+        .leaflet-control-scale,
+        .leaflet-control-logo { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="buttons">
+        <button id="connectBtn">Connect GPS Tracker</button>
+        <button id="disconnectBtn">Disconnect</button>
+        <button id="clearBtn">Clear Trail</button>
+        <button id="followBtn">Follow: ON</button>
+    </div>
+    <div id="map"></div>
+    <div id="status">Disconnected</div>
 
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/0.2.0/leaflet.rotatedMarker.js"></script>
     <script>
-    // Firebase config and init (unchanged)
-    const firebaseConfig = {
-        apiKey: "AIzaSyDAuSpFwWPN39RHpd1a_f9J4eO3ktaKGhY",
-        authDomain: "fir-esp-3ce92.firebaseapp.com",
-	
-    const db = firebase.database();
-    const auth = firebase.auth();
+        // Map setup centered on Greece
+        const EuropeBounds = [[34, 18], [42, 30]];
+        let map = L.map('map', {
+            maxBounds: EuropeBounds,
+            maxBoundsViscosity: 1.0,
+            tap: true,
+            tapTolerance: 15,
+            attributionControl: false,
+        }).setView([39.0742, 21.8243], 7);
 
-    // Auth handlers (unchanged)
-    function login() {
-        const email = document.getElementById("email").value;
-        const password = document.getElementById("password").value;
-	
-        }
-    });
+        map.scrollWheelZoom.enable();
+        map.touchZoom.enable();
+        map.doubleClickZoom.enable();
+        map.boxZoom.enable();
+        map.keyboard.enable();
 
-    // Leaflet map setup
-    const map = L.map('map').setView([40.6401, 22.9444], 8);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    const MAX_TRAIL = 500;
-	
-    let currentFollow = null;
-    let airlinersCount = 0;
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    const AIRLINER_ICON = L.icon({
-        iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Airplane_silhouette.svg/32px-Airplane_silhouette.svg.png',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-    });
-	
-        if (airlinersCount > 0) {
-            const airlinerItem = document.createElement('div');
-            airlinerItem.className = "legend-item";
-            airlinerItem.innerHTML = `<span class="legend-color" style="background:black"></span>Real Airliners (${airlinersCount})`;
-            legendDiv.appendChild(airlinerItem);
-        }
-    }
+        // ESP32 GPS Tracker variables
+        let marker;
+        let trail = [];
+        let polyline;
+        const MAX_TRAIL = 500;
+        let followMode = true;
 
-    // Firebase plane listener (unchanged)
-    function listenPlanes() {
-        const planesRef = db.ref('planes');
-        planesRef.on('value', snapshot => {
-	
+        let bleDevice;
+        let gpsCharacteristic;
+        const SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab";
+        const CHARACTERISTIC_UUID = "abcd1234-5678-90ab-cdef-1234567890ab";
+
+        function setStatus(text) { document.getElementById('status').innerText = text; }
+
+        document.getElementById('connectBtn').addEventListener('click', async () => {
+            try {
+                bleDevice = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'LoRaGPS' }],
+                    optionalServices: [SERVICE_UUID]
+                });
+                const server = await bleDevice.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                gpsCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+                await gpsCharacteristic.startNotifications();
+                gpsCharacteristic.addEventListener('characteristicvaluechanged', handleGPSData);
+
+                setStatus("Connected to GPS Tracker!");
+                alert("Connected!");
+            } catch (err) {
+                console.error(err);
+                setStatus("Bluetooth connection failed. Please reboot tracker.");
+                alert("BLE connection failed! Please reboot tracker.");
+            }
         });
-    }
 
-    // BLE Collector Mode (unchanged)
-    const BLE_SUPPORTED = navigator.bluetooth !== undefined;
-
-    document.getElementById('spectatorBtn').addEventListener('click', () => {
-	
-    document.getElementById('connectBtn').addEventListener('click', connectESP32);
-    document.getElementById('disconnectBtn').addEventListener('click', disconnectAll);
-
-    // Distance filter for Thessaloniki center
-    function getDistanceFromThessaloniki(lat, lng) {
-        const R = 6371;
-        const lat1 = 40.6401 * Math.PI / 180;
-
-        return R * c;
-    }
-
-    // OpenSky Network integration to fetch airliners near Thessaloniki
-    const AIRLINER_UPDATE_INTERVAL = 30000; // 30 seconds
-    const RADIUS_KM = 50; // radius around Thessaloniki center
-
-    async function fetchAirliners() {
-        try {
-            // Bounding box parameter (~0.5° latitude and longitude ~50km box)
-            const lamax = 40.6401 + 0.5;
-            const lamin = 40.6401 - 0.5;
-            const lomax = 22.9444 + 0.5;
-            const lomin = 22.9444 - 0.5;
-
-            const url = `https://opensky-network.org/api/states/all?lamax=${lamax}&lamin=${lamin}&lomax=${lomax}&lomin=${lomin}`;
-
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`OpenSky fetch error: ${res.status}`);
-
-            const data = await res.json();
-            if (!data.states) {
-                setStatus("No airliner data from OpenSky.");
-                return;
+        document.getElementById('disconnectBtn').addEventListener('click', async () => {
+            if (bleDevice && bleDevice.gatt.connected) {
+                await bleDevice.gatt.disconnect();
+                setStatus("Disconnected");
             }
+            bleDevice = null;
+            gpsCharacteristic = null;
+            alert("Disconnected!");
+        });
 
-            airlinersCount = 0;
-            const existingIDs = new Set(Object.keys(airliners));
-            const newIDs = new Set();
-	
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            trail = [];
+            if (polyline) { map.removeLayer(polyline); polyline = null; }
+        });
 
-                if(lat === null || lng === null) continue;
+        document.getElementById('followBtn').addEventListener('click', () => {
+            followMode = !followMode;
+            document.getElementById('followBtn').innerText = "Follow: " + (followMode ? "ON" : "OFF");
+        });
 
-                // Distance filtering for better fine-tune if desired (redundant with bounding box but safer)
-                if(getDistanceFromThessaloniki(lat,lng) > RADIUS_KM) continue;
+        function handleGPSData(event) {
+            const decoder = new TextDecoder();
+            const text = decoder.decode(event.target.value);
+            text.split("\n").forEach(line => {
+                if (line.includes(",")) {
+                    let [latStr, lngStr] = line.split(",");
+                    const lat = parseFloat(latStr.trim());
+                    const lng = parseFloat(lngStr.trim());
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        const pos = [lat, lng];
+                        if (!marker) marker = L.marker(pos).addTo(map).bindPopup(`Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`).openPopup();
+                        else marker.setLatLng(pos).bindPopup(`Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
 
-                newIDs.add(icao24);
+                        trail.push(pos);
+                        if (trail.length > MAX_TRAIL) trail.shift();
 
+                        if (polyline) polyline.setLatLngs(trail);
+                        else polyline = L.polyline(trail, { color: 'blue' }).addTo(map);
 
-                airliners[icao24].marker.bindPopup(
-                    `Callsign: ${callsign}<br>`+
-                    `Altitude: ${altitude ? altitude.toFixed(1) : "N/A"} m<br>`+
-                    `Speed: ${velocity ? (velocity*3.6).toFixed(1) : "N/A"} km/h<br>`+  // velocity m/s to km/h
-                    `Heading: ${heading.toFixed(1)}°`
-                );
-
-
-            }
-
-            updateLegend();
-            setStatus(`Showing ${airlinersCount} real-time airliners within ${RADIUS_KM} km of Thessaloniki. Use Collector/Spectator mode for RC planes.`);
-        } catch(err) {
-            console.error(err);
-            setStatus("OpenSky Network fetch error or rate limit reached.");
+                        if (followMode) map.panTo(pos, { animate: true });
+                    }
+                }
+            });
         }
-    }
 
-    setInterval(fetchAirliners, AIRLINER_UPDATE_INTERVAL);
-    fetchAirliners();
+        // Airliners with OpenSky free anonymous API (no auth)
+        const AIRLINER_ICON = L.icon({
+            iconUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Jet_plane_icon.svg/32px-Jet_plane_icon.svg.png",
+            iconSize: [32, 32],
+            iconAnchor: [16, 16]
+        });
 
-    listenPlanes();
-    setStatus("Page loaded. Use Collector or Spectator mode.");
+        const airliners = {};
+        let airlinersCount = 0;
+
+        // bounding box for Greece - limits size and credit cost
+        const lamin = 34;
+        const lamax = 42;
+        const lomin = 19;
+        const lomax = 30;
+
+        async function fetchAirliners() {
+            try {
+                // As anonymous, rate limit: 1 request every 10 seconds - do not go faster!
+                const url = `https://opensky-network.org/api/states/all?lamax=${lamax}&lamin=${lamin}&lomax=${lomax}&lomin=${lomin}`;
+                
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                    setStatus(`OpenSky fetch error: ${resp.status}`);
+                    return;
+                }
+
+                const data = await resp.json();
+                if (!data.states) {
+                    setStatus("No flights found over Greece.");
+                    return;
+                }
+
+                airlinersCount = 0;
+                const existingIds = new Set(Object.keys(airliners));
+                const newIds = new Set();
+
+                for (const s of data.states) {
+                    const icao24 = s[0];
+                    const callsign = s[1] ? s[1].trim() : "N/A";
+                    const lat = s[6];
+                    const lng = s[5];
+                    const altitude = s[7];
+                    const heading = s[10] || 0;
+                    const velocity = s[9] || 0;
+
+                    if (lat === null || lng === null) continue;
+
+                    newIds.add(icao24);
+
+                    if (!airliners[icao24]) {
+                        airliners[icao24] = {
+                            marker: L.marker([lat, lng], { icon: AIRLINER_ICON, rotationAngle: heading }).addTo(map)
+                        };
+                    } else {
+                        airliners[icao24].marker.setLatLng([lat, lng]);
+                        airliners[icao24].marker.setRotationAngle(heading);
+                    }
+                    airliners[icao24].marker.bindPopup(
+                        `Callsign: ${callsign}<br>` +
+                        `Altitude: ${altitude !== null ? altitude.toFixed(1) : "N/A"} m<br>` +
+                        `Speed: ${velocity !== null ? (velocity * 3.6).toFixed(1) : "N/A"} km/h<br>` +
+                        `Heading: ${heading.toFixed(1)}°`
+                    );
+
+                    airliners[icao24].isAirliner = true;
+                    airlinersCount++;
+                }
+
+                // Remove stale markers
+                for (const id of existingIds) {
+                    if (!newIds.has(id)) {
+                        map.removeLayer(airliners[id].marker);
+                        delete airliners[id];
+                    }
+                }
+
+                setStatus(`Showing ${airlinersCount} real-time airliners over Greece. GPS Tracker status: ${bleDevice && bleDevice.gatt.connected ? "Connected" : "Disconnected"}`);
+            } catch (e) {
+                setStatus("Failed to fetch OpenSky data.");
+                console.error(e);
+            }
+        }
+
+        setInterval(fetchAirliners, 10500); // slightly more than 10 seconds
+        fetchAirliners();
+
     </script>
 </body>
 </html>
