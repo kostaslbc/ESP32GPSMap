@@ -279,11 +279,17 @@
 
     // OpenSky free tier integration for Greece region (anonymous)
 
-// Simple red circle for real airliners
 const AIRLINER_ICON = L.icon({
-    iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiIGZpbGw9InJlZCIgLz48L3N2Zz4=',
-    iconSize: [16,22 ],
-    iconAnchor: [12, 12]
+  iconUrl: 'data:image/svg+xml;base64,' +
+    btoa(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+        <circle cx="10" cy="10" r="9" fill="#2196f3" stroke="white" stroke-width="2"/>
+        <path d="M10 4 L11 10 L16 12 L16 13 L11 12 L10 16 L9 12 L4 13 L4 12 L9 10 Z"
+              fill="white"/>
+      </svg>
+    `),
+  iconSize: [20, 20],
+  iconAnchor: [10, 10]
 });
 
     const airliners = {};
@@ -369,6 +375,7 @@ const AIRLINER_ICON = L.icon({
     </script>
 </body>
 </html>
+
 
 
 
