@@ -68,24 +68,21 @@
     <div id="legend"><b>Planes:</b><br></div>
     <div id="map"></div>
     <div id="status">Initializing...</div>
-
-    <!-- Login box -->
     <div id="loginBox">
-        <input id="email" type="email" placeholder="Email">
-        <input id="password" type="password" placeholder="Password">
+        <input id="email" type="email" placeholder="Email" />
+        <input id="password" type="password" placeholder="Password" />
         <button onclick="login()">Login</button>
         <button onclick="logout()">Logout</button>
     </div>
 
-    <!-- Leaflet -->
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <!-- Firebase -->
+    <script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/0.2.0/leaflet.rotatedMarker.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
 
     <script>
-    // Firebase Setup (unchanged)
+    // Firebase config and initializations (unchanged)
     const firebaseConfig = {
         apiKey: "AIzaSyDAuSpFwWPN39RHpd1a_f9J4eO3ktaKGhY",
         authDomain: "fir-esp-3ce92.firebaseapp.com",
@@ -99,7 +96,7 @@
     const db = firebase.database();
     const auth = firebase.auth();
 
-    // Auth Handling (unchanged)
+    // Auth functions (unchanged)
     function login() {
         const email = document.getElementById("email").value;
         const password = document.getElementById("password").value;
@@ -108,10 +105,8 @@
             setStatus("Signed in as " + user.user.email);
             document.getElementById("loginBox").style.display = "none";
             document.getElementById("connectBtn").disabled = false;
-        })
-        .catch(err => alert("Login failed: " + err.message));
+        }).catch(err => alert("Login failed: " + err.message));
     }
-
     function logout() {
         auth.signOut().then(() => {
             setStatus("Logged out");
@@ -119,10 +114,9 @@
             document.getElementById("connectBtn").disabled = true;
         });
     }
-
     auth.onAuthStateChanged(user => {
-        if (user) {
-            setStatus("Signed in as " + user.email);
+        if(user) {
+            setStatus("Signed in as "+user.email);
             document.getElementById("loginBox").style.display = "none";
             document.getElementById("connectBtn").disabled = false;
         } else {
@@ -132,7 +126,7 @@
         }
     });
 
-    // Leaflet Map Setup
+    // Leaflet Map and planes init (unchanged)
     const map = L.map('map').setView([40.5, 23.0], 8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
@@ -166,25 +160,24 @@
         }
     }
 
-    // Firebase Listener for ESP32 planes
+    // Firebase planes listener (unchanged)
     function listenPlanes() {
         const planesRef = db.ref('planes');
         planesRef.on('value', snapshot => {
             const data = snapshot.val();
-            if (!data) return;
-
-            for (let planeID in data) {
+            if(!data) return;
+            for(let planeID in data) {
                 const lat = data[planeID].lat;
                 const lng = data[planeID].lng;
                 const alt = data[planeID].alt || 0;
                 const airspeed = data[planeID].airspeed || 0;
                 const pos = [lat, lng];
 
-                if (!planes[planeID]) {
+                if(!planes[planeID]) {
                     planes[planeID] = {
                         marker: L.marker(pos).addTo(map).bindPopup(`Plane ${planeID}`),
                         trail: [],
-                        polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map)
+                        polyline: L.polyline([], {color: getPlaneColor(planeID)}).addTo(map)
                     };
                 }
 
@@ -192,16 +185,16 @@
                 plane.marker.setLatLng(pos)
                     .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
                 plane.trail.push(pos);
-                if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
+                if(plane.trail.length > MAX_TRAIL) plane.trail.shift();
                 plane.polyline.setLatLngs(plane.trail);
 
-                if (currentFollow == planeID) map.panTo(pos, { animate: true });
+                if(currentFollow == planeID) map.panTo(pos,{animate:true});
             }
             updateLegend();
         });
     }
 
-    // BLE Collector Mode
+    // BLE Collector Mode as per your original working code
     const BLE_SUPPORTED = navigator.bluetooth !== undefined;
 
     document.getElementById('spectatorBtn').addEventListener('click', () => {
@@ -213,11 +206,11 @@
     });
 
     async function connectESP32() {
-        if (!BLE_SUPPORTED || spectatorMode) return;
-        if (!auth.currentUser) { alert("Please log in first!"); return; }
+        if(!BLE_SUPPORTED || spectatorMode) return;
+        if(!auth.currentUser) { alert("Please log in first!"); return; }
         try {
             const device = await navigator.bluetooth.requestDevice({
-                filters: [{ namePrefix: 'LoRaGPS' }],
+                filters: [{namePrefix:'LoRaGPS'}],
                 optionalServices: ["12345678-1234-1234-1234-1234567890ab"]
             });
             const server = await device.gatt.connect();
@@ -239,32 +232,30 @@
 
     function handleGPSData(event) {
         const value = event.target.value;
-        const dataView = new DataView(value.buffer); 
+        const dataView = new DataView(value.buffer);
         const lat = dataView.getFloat32(0, true);
         const lng = dataView.getFloat32(4, true);
-        const alt = dataView.getFloat32(8, true);      // altitude
-        const airspeed = dataView.getFloat32(12, true); // airspeed
+        const alt = dataView.getFloat32(8, true);
+        const airspeed = dataView.getFloat32(12, true);
         const planeID = dataView.getUint8(16);
         const pos = [lat, lng];
 
-        if (!planes[planeID]) {
+        if(!planes[planeID]) {
             planes[planeID] = {
                 marker: L.marker(pos).addTo(map).bindPopup(`Plane ${planeID}`),
                 trail: [],
-                polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map)
+                polyline: L.polyline([], {color: getPlaneColor(planeID)}).addTo(map)
             };
         }
 
         const plane = planes[planeID];
-        plane.marker.setLatLng(pos)
-            .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
+        plane.marker.setLatLng(pos).bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
         plane.trail.push(pos);
-        if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
+        if(plane.trail.length > MAX_TRAIL) plane.trail.shift();
         plane.polyline.setLatLngs(plane.trail);
 
-        // Update Firebase including alt and airspeed
-        if (auth.currentUser) {
-            db.ref('planes/' + planeID).set({
+        if(auth.currentUser) {
+            db.ref('planes/'+planeID).set({
                 lat: lat,
                 lng: lng,
                 alt: alt,
@@ -275,15 +266,18 @@
     }
 
     async function disconnectAll() {
-        for (let d of devices) {
-            if (d.device.gatt.connected) await d.device.gatt.disconnect();
+        for(let d of devices) {
+            if(d.device.gatt.connected) await d.device.gatt.disconnect();
         }
         devices.length = 0;
         setStatus("Disconnected all BLE devices");
         alert("All devices disconnected!");
     }
 
-    // OpenSky Traffic Integration - Free Anonymous User
+    document.getElementById('connectBtn').addEventListener('click', connectESP32);
+    document.getElementById('disconnectBtn').addEventListener('click', disconnectAll);
+
+    // OpenSky free tier integration for Greece region (anonymous)
 
     const AIRLINER_ICON = L.icon({
         iconUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Jet_plane_icon.svg/32px-Jet_plane_icon.svg.png",
@@ -294,7 +288,7 @@
     const airliners = {};
     let airlinersCount = 0;
 
-    // Greece bounding box for OpenSky calls
+    // Greece bounding box approx 34-42 lat, 19-30 lon
     const lamin = 34;
     const lamax = 42;
     const lomin = 19;
@@ -305,13 +299,12 @@
             const url = `https://opensky-network.org/api/states/all?lamax=${lamax}&lamin=${lamin}&lomax=${lomax}&lomin=${lomin}`;
 
             const response = await fetch(url);
-            if (!response.ok) {
+            if(!response.ok) {
                 setStatus(`OpenSky fetch error: ${response.status}`);
                 return;
             }
-
             const data = await response.json();
-            if (!data.states) {
+            if(!data.states) {
                 setStatus("No flights found over Greece.");
                 return;
             }
@@ -320,55 +313,53 @@
             const existingIds = new Set(Object.keys(airliners));
             const newIds = new Set();
 
-            for (const s of data.states) {
+            for(const s of data.states) {
                 const icao24 = s[0];
-                const callsign = s[1]?.trim() || "N/A";
+                const callsign = s[1] ? s[1].trim() : "N/A";
                 const lat = s[6];
                 const lng = s[5];
                 const altitude = s[7];
                 const heading = s[10] || 0;
                 const velocity = s[9] || 0;
 
-                if (lat === null || lng === null) continue;
+                if(lat === null || lng === null) continue;
 
                 newIds.add(icao24);
 
-                if (!airliners[icao24]) {
+                if(!airliners[icao24]) {
                     airliners[icao24] = {
-                        marker: L.marker([lat, lng], { icon: AIRLINER_ICON, rotationAngle: heading }).addTo(map)
+                        marker: L.marker([lat,lng], {icon: AIRLINER_ICON, rotationAngle: heading}).addTo(map)
                     };
                 } else {
-                    airliners[icao24].marker.setLatLng([lat, lng]);
+                    airliners[icao24].marker.setLatLng([lat,lng]);
                     airliners[icao24].marker.setRotationAngle(heading);
                 }
 
                 airliners[icao24].marker.bindPopup(
                     `Callsign: ${callsign}<br>` +
                     `Altitude: ${altitude !== null ? altitude.toFixed(1) : "N/A"} m<br>` +
-                    `Speed: ${velocity !== null ? (velocity * 3.6).toFixed(1) : "N/A"} km/h<br>` +
+                    `Speed: ${velocity !== null ? (velocity*3.6).toFixed(1) : "N/A"} km/h<br>` +
                     `Heading: ${heading.toFixed(1)}°`
                 );
 
                 airliners[icao24].isAirliner = true;
                 airlinersCount++;
             }
-
-            // Remove old markers
-            for (const id of existingIds) {
-                if (!newIds.has(id)) {
+            // Remove stale markers
+            for(const id of existingIds) {
+                if(!newIds.has(id)) {
                     map.removeLayer(airliners[id].marker);
                     delete airliners[id];
                 }
             }
-
             setStatus(`Showing ${airlinersCount} real-time airliners over Greece. Use Collector or Spectator mode for RC planes.`);
-        } catch (e) {
+        } catch(e) {
             setStatus("Failed to fetch OpenSky data.");
             console.error(e);
         }
     }
-
-    setInterval(fetchAirliners, 11000); // Respect free tier 1 request / 10 sec approx
+    // Poll every 11 seconds respecting 1 req/10 seconds limit
+    setInterval(fetchAirliners, 11000);
     fetchAirliners();
 
     // Initialize Firebase listener
