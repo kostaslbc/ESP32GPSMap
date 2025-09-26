@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ESP32 GPS Map BLE with OpenSky Free Traffic</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Plane GPS Tracker with OpenSky Free Traffic</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
         html, body { margin:0; padding:0; height:100%; width:100%; }
@@ -20,234 +20,360 @@
             gap: 10px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.2);
         }
-        #buttons button {
-            padding: 10px 18px;
-            font-size: 15px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: bold;
-        }
+        #buttons button { padding: 10px 18px; font-size: 15px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
         #connectBtn { background-color:#28a745; color:white; }
         #disconnectBtn { background-color:#dc3545; color:white; }
-        #clearBtn { background-color:#ffc107; color:black; }
-        #followBtn { background-color:#007bff; color:white; }
-        #status {
+        #spectatorBtn { background-color:#007bff; color:white; }
+        #legend {
             position: fixed;
-            bottom: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.6);
-            color: white;
-            padding: 5px 10px;
-            border-radius: 5px;
+            top: 70px;
+            left: 10px;
+            background: rgba(255,255,255,0.95);
+            padding: 10px;
+            border-radius: 6px;
             z-index: 9999;
             font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
         }
-        .leaflet-control-attribution,
-        .leaflet-control-scale,
-        .leaflet-control-logo { display: none !important; }
+        #status { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 5px; z-index: 9999; font-size: 14px; }
+        .legend-item { cursor: pointer; margin-bottom: 4px; }
+        .legend-color { display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:middle; }
+        #loginBox {
+            position: fixed;
+            top: 150px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #fff;
+            padding: 10px;
+            border-radius: 6px;
+            z-index: 9999;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            display: none;
+        }
+        #loginBox input {
+            display: block;
+            margin-bottom: 6px;
+            padding: 6px;
+            width: 200px;
+        }
     </style>
 </head>
 <body>
     <div id="buttons">
-        <button id="connectBtn">Connect GPS Tracker</button>
-        <button id="disconnectBtn">Disconnect</button>
-        <button id="clearBtn">Clear Trail</button>
-        <button id="followBtn">Follow: ON</button>
+        <button id="connectBtn" disabled>Connect ESP32</button>
+        <button id="disconnectBtn">Disconnect All</button>
+        <button id="spectatorBtn">Spectator Mode</button>
     </div>
+    <div id="legend"><b>Planes:</b><br></div>
     <div id="map"></div>
-    <div id="status">Disconnected</div>
+    <div id="status">Initializing...</div>
 
+    <!-- Login box -->
+    <div id="loginBox">
+        <input id="email" type="email" placeholder="Email">
+        <input id="password" type="password" placeholder="Password">
+        <button onclick="login()">Login</button>
+        <button onclick="logout()">Logout</button>
+    </div>
+
+    <!-- Leaflet -->
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/0.2.0/leaflet.rotatedMarker.js"></script>
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+
     <script>
-        // Map setup centered on Greece
-        const EuropeBounds = [[34, 18], [42, 30]];
-        let map = L.map('map', {
-            maxBounds: EuropeBounds,
-            maxBoundsViscosity: 1.0,
-            tap: true,
-            tapTolerance: 15,
-            attributionControl: false,
-        }).setView([39.0742, 21.8243], 7);
+    // Firebase Setup (unchanged)
+    const firebaseConfig = {
+        apiKey: "AIzaSyDAuSpFwWPN39RHpd1a_f9J4eO3ktaKGhY",
+        authDomain: "fir-esp-3ce92.firebaseapp.com",
+        databaseURL: "https://fir-esp-3ce92-default-rtdb.firebaseio.com",
+        projectId: "fir-esp-3ce92",
+        storageBucket: "fir-esp-3ce92.firebasestorage.app",
+        messagingSenderId: "458185267913",
+        appId: "1:458185267913:web:7d0759cb3caf9a67ca0b18"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const auth = firebase.auth();
 
-        map.scrollWheelZoom.enable();
-        map.touchZoom.enable();
-        map.doubleClickZoom.enable();
-        map.boxZoom.enable();
-        map.keyboard.enable();
+    // Auth Handling (unchanged)
+    function login() {
+        const email = document.getElementById("email").value;
+        const password = document.getElementById("password").value;
+        auth.signInWithEmailAndPassword(email, password)
+        .then(user => {
+            setStatus("Signed in as " + user.user.email);
+            document.getElementById("loginBox").style.display = "none";
+            document.getElementById("connectBtn").disabled = false;
+        })
+        .catch(err => alert("Login failed: " + err.message));
+    }
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-        // ESP32 GPS Tracker variables
-        let marker;
-        let trail = [];
-        let polyline;
-        const MAX_TRAIL = 500;
-        let followMode = true;
-
-        let bleDevice;
-        let gpsCharacteristic;
-        const SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab";
-        const CHARACTERISTIC_UUID = "abcd1234-5678-90ab-cdef-1234567890ab";
-
-        function setStatus(text) { document.getElementById('status').innerText = text; }
-
-        document.getElementById('connectBtn').addEventListener('click', async () => {
-            try {
-                bleDevice = await navigator.bluetooth.requestDevice({
-                    filters: [{ name: 'LoRaGPS' }],
-                    optionalServices: [SERVICE_UUID]
-                });
-                const server = await bleDevice.gatt.connect();
-                const service = await server.getPrimaryService(SERVICE_UUID);
-                gpsCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-
-                await gpsCharacteristic.startNotifications();
-                gpsCharacteristic.addEventListener('characteristicvaluechanged', handleGPSData);
-
-                setStatus("Connected to GPS Tracker!");
-                alert("Connected!");
-            } catch (err) {
-                console.error(err);
-                setStatus("Bluetooth connection failed. Please reboot tracker.");
-                alert("BLE connection failed! Please reboot tracker.");
-            }
+    function logout() {
+        auth.signOut().then(() => {
+            setStatus("Logged out");
+            if (!spectatorMode) document.getElementById("loginBox").style.display = "block";
+            document.getElementById("connectBtn").disabled = true;
         });
+    }
 
-        document.getElementById('disconnectBtn').addEventListener('click', async () => {
-            if (bleDevice && bleDevice.gatt.connected) {
-                await bleDevice.gatt.disconnect();
-                setStatus("Disconnected");
-            }
-            bleDevice = null;
-            gpsCharacteristic = null;
-            alert("Disconnected!");
-        });
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            setStatus("Signed in as " + user.email);
+            document.getElementById("loginBox").style.display = "none";
+            document.getElementById("connectBtn").disabled = false;
+        } else {
+            setStatus("Not signed in");
+            if (!spectatorMode) document.getElementById("loginBox").style.display = "block";
+            document.getElementById("connectBtn").disabled = true;
+        }
+    });
 
-        document.getElementById('clearBtn').addEventListener('click', () => {
-            trail = [];
-            if (polyline) { map.removeLayer(polyline); polyline = null; }
-        });
+    // Leaflet Map Setup
+    const map = L.map('map').setView([40.5, 23.0], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        document.getElementById('followBtn').addEventListener('click', () => {
-            followMode = !followMode;
-            document.getElementById('followBtn').innerText = "Follow: " + (followMode ? "ON" : "OFF");
-        });
+    const MAX_TRAIL = 500;
+    const planes = {};
+    const devices = [];
+    let spectatorMode = false;
+    let currentFollow = null;
 
-        function handleGPSData(event) {
-            const decoder = new TextDecoder();
-            const text = decoder.decode(event.target.value);
-            text.split("\n").forEach(line => {
-                if (line.includes(",")) {
-                    let [latStr, lngStr] = line.split(",");
-                    const lat = parseFloat(latStr.trim());
-                    const lng = parseFloat(lngStr.trim());
-                    if (!isNaN(lat) && !isNaN(lng)) {
-                        const pos = [lat, lng];
-                        if (!marker) marker = L.marker(pos).addTo(map).bindPopup(`Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`).openPopup();
-                        else marker.setLatLng(pos).bindPopup(`Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`);
+    function setStatus(text) { document.getElementById('status').innerText = text; }
+    function getPlaneColor(id) {
+        const colors = ["blue","red","green","orange","purple","brown","pink"];
+        return colors[id % colors.length];
+    }
 
-                        trail.push(pos);
-                        if (trail.length > MAX_TRAIL) trail.shift();
+    function updateLegend() {
+        const legendDiv = document.getElementById('legend');
+        legendDiv.innerHTML = "<b>Planes:</b><br>";
+        for (let planeID in planes) {
+            const plane = planes[planeID];
+            const color = getPlaneColor(planeID);
+            const item = document.createElement('div');
+            item.className = "legend-item";
+            item.innerHTML = `<span class="legend-color" style="background:${color}"></span>Plane ${planeID}`;
+            item.onclick = () => {
+                currentFollow = planeID;
+                map.panTo(plane.marker.getLatLng(), {animate:true});
+                setStatus(`Following Plane ${planeID}`);
+            };
+            legendDiv.appendChild(item);
+        }
+    }
 
-                        if (polyline) polyline.setLatLngs(trail);
-                        else polyline = L.polyline(trail, { color: 'blue' }).addTo(map);
+    // Firebase Listener for ESP32 planes
+    function listenPlanes() {
+        const planesRef = db.ref('planes');
+        planesRef.on('value', snapshot => {
+            const data = snapshot.val();
+            if (!data) return;
 
-                        if (followMode) map.panTo(pos, { animate: true });
-                    }
+            for (let planeID in data) {
+                const lat = data[planeID].lat;
+                const lng = data[planeID].lng;
+                const alt = data[planeID].alt || 0;
+                const airspeed = data[planeID].airspeed || 0;
+                const pos = [lat, lng];
+
+                if (!planes[planeID]) {
+                    planes[planeID] = {
+                        marker: L.marker(pos).addTo(map).bindPopup(`Plane ${planeID}`),
+                        trail: [],
+                        polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map)
+                    };
                 }
+
+                const plane = planes[planeID];
+                plane.marker.setLatLng(pos)
+                    .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
+                plane.trail.push(pos);
+                if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
+                plane.polyline.setLatLngs(plane.trail);
+
+                if (currentFollow == planeID) map.panTo(pos, { animate: true });
+            }
+            updateLegend();
+        });
+    }
+
+    // BLE Collector Mode
+    const BLE_SUPPORTED = navigator.bluetooth !== undefined;
+
+    document.getElementById('spectatorBtn').addEventListener('click', () => {
+        spectatorMode = true;
+        document.getElementById('connectBtn').style.display = 'none';
+        document.getElementById('disconnectBtn').style.display = 'none';
+        document.getElementById('loginBox').style.display = 'none';
+        setStatus("Spectator mode active. Viewing planes via Firebase.");
+    });
+
+    async function connectESP32() {
+        if (!BLE_SUPPORTED || spectatorMode) return;
+        if (!auth.currentUser) { alert("Please log in first!"); return; }
+        try {
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{ namePrefix: 'LoRaGPS' }],
+                optionalServices: ["12345678-1234-1234-1234-1234567890ab"]
+            });
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService("12345678-1234-1234-1234-1234567890ab");
+            const characteristic = await service.getCharacteristic("abcd1234-5678-90ab-cdef-1234567890ab");
+
+            await characteristic.startNotifications();
+            characteristic.addEventListener('characteristicvaluechanged', handleGPSData);
+
+            devices.push({device, characteristic});
+            setStatus(`Connected devices: ${devices.length}`);
+            alert(`Connected to ${device.name}!`);
+        } catch(err) {
+            console.error(err);
+            setStatus("BLE connection failed.");
+            alert("BLE connection failed!");
+        }
+    }
+
+    function handleGPSData(event) {
+        const value = event.target.value;
+        const dataView = new DataView(value.buffer); 
+        const lat = dataView.getFloat32(0, true);
+        const lng = dataView.getFloat32(4, true);
+        const alt = dataView.getFloat32(8, true);      // altitude
+        const airspeed = dataView.getFloat32(12, true); // airspeed
+        const planeID = dataView.getUint8(16);
+        const pos = [lat, lng];
+
+        if (!planes[planeID]) {
+            planes[planeID] = {
+                marker: L.marker(pos).addTo(map).bindPopup(`Plane ${planeID}`),
+                trail: [],
+                polyline: L.polyline([], { color: getPlaneColor(planeID) }).addTo(map)
+            };
+        }
+
+        const plane = planes[planeID];
+        plane.marker.setLatLng(pos)
+            .bindPopup(`Plane ${planeID}<br>Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}<br>Alt: ${alt.toFixed(1)} m<br>Airspeed: ${airspeed.toFixed(1)} km/h`);
+        plane.trail.push(pos);
+        if (plane.trail.length > MAX_TRAIL) plane.trail.shift();
+        plane.polyline.setLatLngs(plane.trail);
+
+        // Update Firebase including alt and airspeed
+        if (auth.currentUser) {
+            db.ref('planes/' + planeID).set({
+                lat: lat,
+                lng: lng,
+                alt: alt,
+                airspeed: airspeed,
+                timestamp: Date.now()
             });
         }
+    }
 
-        // Airliners with OpenSky free anonymous API (no auth)
-        const AIRLINER_ICON = L.icon({
-            iconUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Jet_plane_icon.svg/32px-Jet_plane_icon.svg.png",
-            iconSize: [32, 32],
-            iconAnchor: [16, 16]
-        });
-
-        const airliners = {};
-        let airlinersCount = 0;
-
-        // bounding box for Greece - limits size and credit cost
-        const lamin = 34;
-        const lamax = 42;
-        const lomin = 19;
-        const lomax = 30;
-
-        async function fetchAirliners() {
-            try {
-                // As anonymous, rate limit: 1 request every 10 seconds - do not go faster!
-                const url = `https://opensky-network.org/api/states/all?lamax=${lamax}&lamin=${lamin}&lomax=${lomax}&lomin=${lomin}`;
-                
-                const resp = await fetch(url);
-                if (!resp.ok) {
-                    setStatus(`OpenSky fetch error: ${resp.status}`);
-                    return;
-                }
-
-                const data = await resp.json();
-                if (!data.states) {
-                    setStatus("No flights found over Greece.");
-                    return;
-                }
-
-                airlinersCount = 0;
-                const existingIds = new Set(Object.keys(airliners));
-                const newIds = new Set();
-
-                for (const s of data.states) {
-                    const icao24 = s[0];
-                    const callsign = s[1] ? s[1].trim() : "N/A";
-                    const lat = s[6];
-                    const lng = s[5];
-                    const altitude = s[7];
-                    const heading = s[10] || 0;
-                    const velocity = s[9] || 0;
-
-                    if (lat === null || lng === null) continue;
-
-                    newIds.add(icao24);
-
-                    if (!airliners[icao24]) {
-                        airliners[icao24] = {
-                            marker: L.marker([lat, lng], { icon: AIRLINER_ICON, rotationAngle: heading }).addTo(map)
-                        };
-                    } else {
-                        airliners[icao24].marker.setLatLng([lat, lng]);
-                        airliners[icao24].marker.setRotationAngle(heading);
-                    }
-                    airliners[icao24].marker.bindPopup(
-                        `Callsign: ${callsign}<br>` +
-                        `Altitude: ${altitude !== null ? altitude.toFixed(1) : "N/A"} m<br>` +
-                        `Speed: ${velocity !== null ? (velocity * 3.6).toFixed(1) : "N/A"} km/h<br>` +
-                        `Heading: ${heading.toFixed(1)}°`
-                    );
-
-                    airliners[icao24].isAirliner = true;
-                    airlinersCount++;
-                }
-
-                // Remove stale markers
-                for (const id of existingIds) {
-                    if (!newIds.has(id)) {
-                        map.removeLayer(airliners[id].marker);
-                        delete airliners[id];
-                    }
-                }
-
-                setStatus(`Showing ${airlinersCount} real-time airliners over Greece. GPS Tracker status: ${bleDevice && bleDevice.gatt.connected ? "Connected" : "Disconnected"}`);
-            } catch (e) {
-                setStatus("Failed to fetch OpenSky data.");
-                console.error(e);
-            }
+    async function disconnectAll() {
+        for (let d of devices) {
+            if (d.device.gatt.connected) await d.device.gatt.disconnect();
         }
+        devices.length = 0;
+        setStatus("Disconnected all BLE devices");
+        alert("All devices disconnected!");
+    }
 
-        setInterval(fetchAirliners, 10500); // slightly more than 10 seconds
-        fetchAirliners();
+    // OpenSky Traffic Integration - Free Anonymous User
 
+    const AIRLINER_ICON = L.icon({
+        iconUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Jet_plane_icon.svg/32px-Jet_plane_icon.svg.png",
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+    });
+
+    const airliners = {};
+    let airlinersCount = 0;
+
+    // Greece bounding box for OpenSky calls
+    const lamin = 34;
+    const lamax = 42;
+    const lomin = 19;
+    const lomax = 30;
+
+    async function fetchAirliners() {
+        try {
+            const url = `https://opensky-network.org/api/states/all?lamax=${lamax}&lamin=${lamin}&lomax=${lomax}&lomin=${lomin}`;
+
+            const response = await fetch(url);
+            if (!response.ok) {
+                setStatus(`OpenSky fetch error: ${response.status}`);
+                return;
+            }
+
+            const data = await response.json();
+            if (!data.states) {
+                setStatus("No flights found over Greece.");
+                return;
+            }
+
+            airlinersCount = 0;
+            const existingIds = new Set(Object.keys(airliners));
+            const newIds = new Set();
+
+            for (const s of data.states) {
+                const icao24 = s[0];
+                const callsign = s[1]?.trim() || "N/A";
+                const lat = s[6];
+                const lng = s[5];
+                const altitude = s[7];
+                const heading = s[10] || 0;
+                const velocity = s[9] || 0;
+
+                if (lat === null || lng === null) continue;
+
+                newIds.add(icao24);
+
+                if (!airliners[icao24]) {
+                    airliners[icao24] = {
+                        marker: L.marker([lat, lng], { icon: AIRLINER_ICON, rotationAngle: heading }).addTo(map)
+                    };
+                } else {
+                    airliners[icao24].marker.setLatLng([lat, lng]);
+                    airliners[icao24].marker.setRotationAngle(heading);
+                }
+
+                airliners[icao24].marker.bindPopup(
+                    `Callsign: ${callsign}<br>` +
+                    `Altitude: ${altitude !== null ? altitude.toFixed(1) : "N/A"} m<br>` +
+                    `Speed: ${velocity !== null ? (velocity * 3.6).toFixed(1) : "N/A"} km/h<br>` +
+                    `Heading: ${heading.toFixed(1)}°`
+                );
+
+                airliners[icao24].isAirliner = true;
+                airlinersCount++;
+            }
+
+            // Remove old markers
+            for (const id of existingIds) {
+                if (!newIds.has(id)) {
+                    map.removeLayer(airliners[id].marker);
+                    delete airliners[id];
+                }
+            }
+
+            setStatus(`Showing ${airlinersCount} real-time airliners over Greece. Use Collector or Spectator mode for RC planes.`);
+        } catch (e) {
+            setStatus("Failed to fetch OpenSky data.");
+            console.error(e);
+        }
+    }
+
+    setInterval(fetchAirliners, 11000); // Respect free tier 1 request / 10 sec approx
+    fetchAirliners();
+
+    // Initialize Firebase listener
+    listenPlanes();
+    setStatus("Page loaded. Use Collector or Spectator mode.");
     </script>
 </body>
 </html>
