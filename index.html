@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Multi-Plane & Airliner GPS Tracker with OpenSky</title>
+    <title>Multi-Plane & Airliner GPS Tracker with OpenSky Auth</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <style>
@@ -83,7 +83,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
 
     <script>
-    // Firebase config and init (unchanged)
+    // Firebase config (unchanged)
     const firebaseConfig = {
         apiKey: "AIzaSyDAuSpFwWPN39RHpd1a_f9J4eO3ktaKGhY",
         authDomain: "fir-esp-3ce92.firebaseapp.com",
@@ -97,7 +97,7 @@
     const db = firebase.database();
     const auth = firebase.auth();
 
-    // Auth handlers (unchanged)
+    // Auth (unchanged)
     function login() {
         const email = document.getElementById("email").value;
         const password = document.getElementById("password").value;
@@ -128,7 +128,7 @@
         }
     });
 
-    // Leaflet map setup
+    // Map setup
     const map = L.map('map').setView([40.6401, 22.9444], 8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     const MAX_TRAIL = 500;
@@ -139,8 +139,9 @@
     let currentFollow = null;
     let airlinersCount = 0;
 
+    // New airliner icon - blue jet symbol
     const AIRLINER_ICON = L.icon({
-        iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Airplane_silhouette.svg/32px-Airplane_silhouette.svg.png',
+        iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Jet_plane_icon.svg/32px-Jet_plane_icon.svg.png',
         iconSize: [32, 32],
         iconAnchor: [16, 16],
     });
@@ -171,12 +172,12 @@
         if (airlinersCount > 0) {
             const airlinerItem = document.createElement('div');
             airlinerItem.className = "legend-item";
-            airlinerItem.innerHTML = `<span class="legend-color" style="background:black"></span>Real Airliners (${airlinersCount})`;
+            airlinerItem.innerHTML = `<span class="legend-color" style="background:blue"></span>Real Airliners (${airlinersCount})`;
             legendDiv.appendChild(airlinerItem);
         }
     }
 
-    // Firebase plane listener (unchanged)
+    // Firebase RC Plane listener
     function listenPlanes() {
         const planesRef = db.ref('planes');
         planesRef.on('value', snapshot => {
@@ -212,7 +213,7 @@
         });
     }
 
-    // BLE Collector Mode (unchanged)
+    // BLE Collector Mode unchanged
     const BLE_SUPPORTED = navigator.bluetooth !== undefined;
 
     document.getElementById('spectatorBtn').addEventListener('click', () => {
@@ -297,7 +298,7 @@
     document.getElementById('connectBtn').addEventListener('click', connectESP32);
     document.getElementById('disconnectBtn').addEventListener('click', disconnectAll);
 
-    // Distance filter for Thessaloniki center
+    // Distance from Thessaloniki center
     function getDistanceFromThessaloniki(lat, lng) {
         const R = 6371;
         const lat1 = 40.6401 * Math.PI / 180;
@@ -315,13 +316,43 @@
         return R * c;
     }
 
-    // OpenSky Network integration to fetch airliners near Thessaloniki
-    const AIRLINER_UPDATE_INTERVAL = 30000; // 30 seconds
-    const RADIUS_KM = 50; // radius around Thessaloniki center
+    // OAuth2 config
+    const CLIENT_ID = 'kostasteki@gmail.com-api-client';
+    const CLIENT_SECRET = 'YOUR_CLIENT_SECRET';  // Replace with your actual client secret
+    let accessToken = null;
+    let tokenExpireTime = 0;
+
+    async function getAccessToken() {
+        const url = 'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token';
+        const params = new URLSearchParams();
+        params.append('grant_type', 'client_credentials');
+        params.append('client_id', CLIENT_ID);
+        params.append('client_secret', CLIENT_SECRET);
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString()
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to get OpenSky access token: ' + response.status);
+        }
+
+        const data = await response.json();
+        accessToken = data.access_token;
+        tokenExpireTime = Date.now() + (data.expires_in * 1000);
+        console.log('Received access token');
+    }
 
     async function fetchAirliners() {
         try {
-            // Bounding box parameter (~0.5° latitude and longitude ~50km box)
+            // Refresh token if near expiry or not present
+            if (!accessToken || Date.now() > tokenExpireTime - 60000) {
+                await getAccessToken();
+            }
+
+            // Bounding box for Thessaloniki approx 50km radius
             const lamax = 40.6401 + 0.5;
             const lamin = 40.6401 - 0.5;
             const lomax = 22.9444 + 0.5;
@@ -329,15 +360,31 @@
 
             const url = `https://opensky-network.org/api/states/all?lamax=${lamax}&lamin=${lamin}&lomax=${lomax}&lomin=${lomin}`;
 
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`OpenSky fetch error: ${res.status}`);
+            const res = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            });
 
-            const data = await res.json();
-            if (!data.states) {
-                setStatus("No airliner data from OpenSky.");
+            if (res.status === 401) {
+                // Possibly token expired, refresh & retry once
+                await getAccessToken();
+                return fetchAirliners();
+            }
+
+            if (!res.ok) {
+                setStatus('OpenSky fetch error: ' + res.status);
                 return;
             }
 
+            const data = await res.json();
+
+            if (!data.states) {
+                setStatus('No airliner data from OpenSky.');
+                return;
+            }
+
+            // Process and filter states
             airlinersCount = 0;
             const existingIDs = new Set(Object.keys(airliners));
             const newIDs = new Set();
@@ -353,8 +400,7 @@
 
                 if(lat === null || lng === null) continue;
 
-                // Distance filtering for better fine-tune if desired (redundant with bounding box but safer)
-                if(getDistanceFromThessaloniki(lat,lng) > RADIUS_KM) continue;
+                if(getDistanceFromThessaloniki(lat, lng) > 50) continue;
 
                 newIDs.add(icao24);
 
@@ -370,7 +416,7 @@
                 airliners[icao24].marker.bindPopup(
                     `Callsign: ${callsign}<br>`+
                     `Altitude: ${altitude ? altitude.toFixed(1) : "N/A"} m<br>`+
-                    `Speed: ${velocity ? (velocity*3.6).toFixed(1) : "N/A"} km/h<br>`+  // velocity m/s to km/h
+                    `Speed: ${velocity ? (velocity*3.6).toFixed(1) : "N/A"} km/h<br>`+
                     `Heading: ${heading.toFixed(1)}°`
                 );
 
@@ -388,18 +434,18 @@
             }
 
             updateLegend();
-            setStatus(`Showing ${airlinersCount} real-time airliners within ${RADIUS_KM} km of Thessaloniki. Use Collector/Spectator mode for RC planes.`);
+            setStatus(`Showing ${airlinersCount} real-time airliners within 50 km of Thessaloniki. Use Collector/Spectator mode for RC planes.`);
         } catch(err) {
             console.error(err);
-            setStatus("OpenSky Network fetch error or rate limit reached.");
+            setStatus("OpenSky fetch error or rate limit reached.");
         }
     }
 
-    setInterval(fetchAirliners, AIRLINER_UPDATE_INTERVAL);
+    setInterval(fetchAirliners, 30000);
     fetchAirliners();
 
     listenPlanes();
-    setStatus("Page loaded. Use Collector or Spectator mode.");
+    setStatus("Page loaded. Use Spectator mode.");
     </script>
 </body>
 </html>
